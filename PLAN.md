@@ -464,8 +464,8 @@ Render all six at 32px and 52px side by side and check before moving on.
 Each phase has an exit test. Do not start the next phase until the current one passes.
 
 Phases 0 to 6 are built and their exit tests pass. Section 13 records where the build
-diverged from this plan. Phase 7 is complete except the two steps that need an explicit
-go-ahead: `git init` and deploy.
+diverged from this plan. Phase 7 is complete except the deploy, which needs an explicit
+go-ahead.
 
 ### Phase 0, scaffold
 - [x] `create-next-app` per section 3, Biome at the prompt
@@ -537,7 +537,7 @@ Exit: a full game is playable with the keyboard alone, and VoiceOver reads every
 - [x] Fonts through `next/font`: Geist, Geist Mono, Inter
 - [x] Metadata, favicon, Open Graph image
 - [x] `pnpm check` green
-- [ ] **Read `CLAUDE.md` rule 0, then install the pre-commit guard, then `git init`.** In
+- [x] **Read `CLAUDE.md` rule 0, then install the pre-commit guard, then `git init`.** In
       that order, and only when asked
 - [ ] Deploy, only when asked
 
@@ -824,3 +824,18 @@ nothing.
 click by an event handler, but both needed the same element reuse, the same rewind-only-
 when-loaded guard, and the same swallowed autoplay rejection. Two copies of that was one
 too many. The hook is now a thin wrapper over it.
+
+
+**A turn indicator and a louder material readout.** The readout was `text-xs` in
+`--ink-soft`, which was legible in light and nearly invisible in dark. It is now `text-sm`
+in `--ink`.
+
+Beside it sits a 6px dot that breathes while it is your move and goes still and dim while
+the bot searches. It is drawn in `--piece-own`, the same fill as your pieces, so the link
+between that colour and your turn needs no explaining. It pairs with the difficulty icon
+running as an equaliser: one says whose turn it is, the other says work is happening.
+
+**Published.** Ten sequential commits, one concern each, pushed over SSH. The guard was
+installed before the first commit, so every one of them passed the denylist on content,
+paths, and message. The hooks live in `.git/hooks`, which git never pushes, and the audit
+across every blob and every commit message in the history came back clean.
