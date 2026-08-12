@@ -1,0 +1,529 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind's `dark:` variant keys off `prefers-color-scheme` by default. This project
+ * decides the theme explicitly with `data-theme`, so the variant is repointed at that.
+ * Without this a `dark:` class silently reads the system setting instead of the player's.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Colour lives here and nowhere else. Components reference tokens, never a hex value and
+ * never a palette utility.
+ *
+ * Board contrast is deliberately low: the two square tones sit close together and the
+ * piece fill carries the contrast. Raising the square contrast makes the board shout and
+ * the pieces disappear into it.
+ */
+:root {
+  --surface: #fbfbfb;
+
+  --board-light: #fdfdfd;
+  --board-dark: #ececec;
+
+  /*
+   * Warm, not blue.
+   *
+   * The board is strictly neutral, so a highlight has to differ from it by hue rather than
+   * by lightness. A cool blue was the only chroma on the page and read as a system accent
+   * dropped onto a greyscale surface. A warm tint separates from both square tones without
+   * ever colliding with the checker pattern, which a darker grey would.
+   */
+  --sq-select: #ede7d9;
+  --sq-lastmove: #f7f4ec;
+  --sq-hint: #c2c2c6;
+  --sq-check: #f6c9c4;
+  --focus-ring: #b6b0a4;
+
+  --piece-own: #9a9a9f;
+  --piece-opponent: #232326;
+
+  --ink: #2a2a2c;
+  --ink-soft: #8a8a90;
+
+  --danger: #b4322a;
+  --danger-ink: #fdfdfd;
+
+  /*
+   * Durations. Board choreography needs a wider range than the two control durations,
+   * which is a documented exception in CLAUDE.md.
+   */
+  --dur-tap: 90ms;
+  --dur-quick: 140ms;
+  --dur-move: 190ms;
+  --dur-settle: 260ms;
+  --dur-event: 420ms;
+
+  /*
+   * Easings sampled from damped springs. `linear()` normalises over whatever duration is
+   * set, so the spring gives the shape and the duration token gives the length.
+   * settle: stiffness 320, damping 30, about 0.8% overshoot.
+   * pop:    stiffness 520, damping 22, about 17% overshoot.
+   * soft:   stiffness 260, damping 34, no overshoot.
+   */
+  /* biome-ignore format: a spring sample reads as a block, not one stop per line */
+  --ease-settle: linear(
+    0, 0.042, 0.1407, 0.2651, 0.395, 0.518, 0.6276, 0.7207, 0.7971, 0.8576, 0.9042,
+    0.939, 0.9641, 0.9817, 0.9934, 1.0008, 1.0051, 1.0072, 1.0079, 1.0077, 1.007, 1.006,
+    1.005, 1.004, 1.0031, 1.0024, 1.0017
+  );
+  /* biome-ignore format: a spring sample reads as a block, not one stop per line */
+  --ease-pop: linear(
+    0, 0.1249, 0.3992, 0.6982, 0.9433, 1.1003, 1.1696, 1.1714, 1.1332, 1.0801, 1.0305,
+    0.9944, 0.9744, 0.9686, 0.9723, 0.9809, 0.9903, 0.9981, 1.0031, 1.0053, 1.0054,
+    1.0042, 1.0026, 1.001, 0.9998, 0.9992, 0.999
+  );
+  /* biome-ignore format: a spring sample reads as a block, not one stop per line */
+  --ease-soft: linear(
+    0, 0.0503, 0.1652, 0.3053, 0.4468, 0.5762, 0.6874, 0.7787, 0.8511, 0.9069, 0.9487,
+    0.9791, 1.0006, 1.0152, 1.0246, 1.0301, 1.0327, 1.0333, 1.0325, 1.0308, 1.0286,
+    1.0261, 1.0235, 1.021, 1.0186, 1.0164, 1.0144
+  );
+}
+
+:root[data-theme="dark"] {
+  --surface: #0d0d0f;
+
+  --board-light: #232327;
+  --board-dark: #17171a;
+
+  --sq-select: #423a29;
+  --sq-lastmove: #2f2b20;
+  --sq-hint: #55555e;
+  --sq-check: #5f2320;
+  --focus-ring: #6b6355;
+
+  /* Inverted so the opponent stays the higher-contrast side on a dark board. */
+  --piece-own: #85858e;
+  --piece-opponent: #e9e9ed;
+
+  --ink: #e6e6ea;
+  --ink-soft: #7e7e88;
+
+  /*
+   * White on red, as a destructive action conventionally is. The red is a step darker
+   * than the light theme's would suggest, because white text on the lighter #d9534a
+   * measures 3.99:1 and 14px text needs 4.5. This lands at 4.8.
+   */
+  --danger: #c8453c;
+  --danger-ink: #fdfdfd;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-numeric: var(--font-inter);
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- board -- */
+
+/*
+ * The piece overlay. `.piece` owns position so it animates the slide, and `.piece-body`
+ * owns scale and shadow so a select or a capture animates without fighting the slide.
+ * Splitting them is what makes both animations composable.
+ */
+.piece {
+  transition: transform var(--dur-move) var(--ease-settle);
+}
+
+.piece-body {
+  transition:
+    transform var(--dur-quick) var(--ease-pop),
+    opacity var(--dur-quick) var(--ease-soft),
+    filter var(--dur-quick) var(--ease-soft);
+}
+
+.piece[data-lifted="true"] .piece-body {
+  transform: scale(1.09);
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 0.24));
+}
+
+/* Capture: the taken piece shrinks out from under the piece that took it. */
+.piece[data-captured="true"] {
+  pointer-events: none;
+}
+
+.piece[data-captured="true"] .piece-body {
+  transform: scale(0.72);
+  opacity: 0;
+  transition-delay: 60ms;
+  transition-duration: 130ms;
+}
+
+/* The rook trails the king so castling reads as one rule rather than two moves. */
+.piece[data-castling-rook="true"] {
+  transition-delay: 70ms;
+}
+
+/*
+ * Hover is set on the piece from board.tsx rather than by a CSS selector: the square and
+ * the piece live in separate layers, so no combinator can reach from one to the other.
+ */
+.piece[data-hovered="true"]:not([data-lifted="true"]) .piece-body {
+  transform: scale(1.03);
+}
+
+/*
+ * Entrance, as an animation rather than a transition.
+ *
+ * A transition here needed a `transition-delay` for the stagger, and that delay is not
+ * scoped to the first frame: it applied to the transform of every later move too, so a
+ * piece on the a-file hesitated 60ms before it started sliding. An animation runs once on
+ * mount and leaves the move transition alone.
+ */
+.piece {
+  animation: piece-in var(--dur-settle) var(--ease-settle) backwards;
+  animation-delay: calc(var(--enter-delay, 0) * 18ms);
+}
+
+@keyframes piece-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/*
+ * New game. Pieces already carry their position as a transform, so putting the start
+ * position back and letting the existing transition run is the whole effect. The stagger
+ * is by file, which reads as the board reassembling from the edges in.
+ */
+.piece-layer[data-resetting="true"] .piece {
+  transition-duration: var(--dur-event);
+  transition-delay: calc(var(--enter-delay, 0) * 30ms);
+}
+
+.sq {
+  transition: filter var(--dur-tap) linear;
+}
+
+.sq:active {
+  filter: brightness(0.96);
+}
+
+/*
+ * Drag. `translate` is set inline and composes with the square-based `transform`, so the
+ * two positioning systems never have to agree on anything.
+ */
+.piece[data-dragging="true"] {
+  transition: none;
+  z-index: 4;
+}
+
+.piece[data-dragging="true"] .piece-body {
+  transform: scale(1.12);
+  filter: drop-shadow(0 6px 12px rgb(0 0 0 / 0.26));
+}
+
+/* Released somewhere illegal: the piece eases home rather than blinking back. */
+.piece[data-returning="true"] {
+  transition: translate var(--dur-move) var(--ease-settle);
+  z-index: 4;
+}
+
+/* A drag on touch must not also scroll the page. */
+.board-surface {
+  touch-action: none;
+}
+
+.board-surface:has(.piece[data-dragging="true"]) {
+  cursor: grabbing;
+}
+
+/* The turn dot breathes while it is your move, and goes still when it is not. */
+.turn-dot {
+  transition:
+    opacity var(--dur-settle) var(--ease-soft),
+    background var(--dur-settle) var(--ease-soft);
+}
+
+.turn-dot[data-active="true"] {
+  animation: turn-breathe 2s ease-in-out infinite;
+}
+
+@keyframes turn-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    scale: 1;
+  }
+  50% {
+    opacity: 1;
+    scale: 1.3;
+  }
+}
+
+/* Legal move hints, staggered outward from the piece that was picked up. */
+.hint-dot,
+.hint-ring {
+  animation: hint-in var(--dur-settle) var(--ease-pop) backwards;
+  animation-delay: calc(var(--hint-index, 0) * 16ms);
+}
+
+@keyframes hint-in {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/*
+ * Applied to `.piece-body`, never to `.piece`.
+ *
+ * `.piece` carries a permanent `animation: piece-in`. A class that sets the `animation`
+ * shorthand on it wins while applied, and removing that class flips `animation-name` back,
+ * which restarts the entrance instead of leaving it finished. The body has no animation of
+ * its own, so this composes cleanly and unwinds to nothing.
+ */
+.shake {
+  animation: shake var(--dur-settle) ease-in-out;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    translate: 0;
+  }
+  25% {
+    translate: -4px;
+  }
+  50% {
+    translate: 4px;
+  }
+  75% {
+    translate: -2px;
+  }
+}
+
+.check-pulse {
+  animation: check-pulse 520ms var(--ease-soft) 2;
+}
+
+@keyframes check-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Checkmate: the losing king tips over and stays down. */
+.piece[data-mated="true"] .piece-body {
+  transform: rotate(68deg);
+  transition: transform var(--dur-event) var(--ease-settle);
+}
+
+.icon-spin {
+  animation: icon-spin var(--dur-event) var(--ease-settle);
+}
+
+@keyframes icon-spin {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* The difficulty bars double as the bot's thinking indicator. */
+.bar-equalise {
+  animation: bar-equalise 900ms ease-in-out infinite;
+  animation-delay: calc(var(--bar-index, 0) * 120ms);
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+@keyframes bar-equalise {
+  0%,
+  100% {
+    scale: 1 0.45;
+  }
+  50% {
+    scale: 1 1;
+  }
+}
+
+.digit-roll {
+  animation: digit-roll 200ms var(--ease-pop);
+}
+
+@keyframes digit-roll {
+  from {
+    translate: 0 60%;
+    opacity: 0;
+  }
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+
+/*
+ * Theme toggle. Both icons ship and CSS picks one, so nothing depends on JavaScript
+ * having run and there is no post-hydration icon swap.
+ */
+:root[data-theme="dark"] .icon-to-dark,
+:root:not([data-theme="dark"]) .icon-to-light {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- dialog -- */
+
+/*
+ * Radix keeps the node mounted while a `[data-state="closed"]` animation is running, so
+ * both directions can be pure CSS.
+ *
+ * Only `opacity` and the standalone `scale` property are animated. The content is centred
+ * with `-translate-x-1/2 -translate-y-1/2`, which occupies `transform`, and animating that
+ * would fight the centring. `scale` is applied before `transform` and about the element's
+ * own centre, so the two compose without either having to know about the other.
+ */
+.dialog-overlay[data-state="open"] {
+  animation: overlay-in 150ms ease-out;
+}
+
+.dialog-overlay[data-state="closed"] {
+  animation: overlay-out 120ms ease-in;
+}
+
+/*
+ * A closing overlay stays mounted for the length of its animation, and it is a fixed,
+ * full-viewport, z-50 element. Without this it swallows any click made in the ~140ms after
+ * the dialog is dismissed, which is exactly when someone reaches for the next control.
+ * Measured: at 11ms after confirming, the overlay was still the element under the pointer.
+ *
+ * `important` because the dialog primitive sets `pointer-events: auto` inline on the
+ * overlay, and no selector outranks an inline style. This is the case the keyword exists
+ * for, rather than a specificity shortcut.
+ */
+.dialog-overlay[data-state="closed"],
+.dialog-content[data-state="closed"] {
+  /* biome-ignore lint/complexity/noImportantStyles: overrides an inline style set by the dialog primitive, which no selector can outrank */
+  pointer-events: none !important;
+}
+
+.dialog-content[data-state="open"] {
+  animation: dialog-in 180ms var(--ease-settle);
+}
+
+.dialog-content[data-state="closed"] {
+  animation: dialog-out 130ms ease-in;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes dialog-out {
+  to {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+/* --------------------------------------------------------------- tooltip -- */
+
+.tooltip-content {
+  animation: tooltip-in 150ms ease-out;
+}
+
+.tooltip-content[data-state="closed"] {
+  animation: tooltip-out 100ms ease-in;
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    scale: 0.95;
+    translate: 0 2px;
+  }
+}
+
+@keyframes tooltip-out {
+  to {
+    opacity: 0;
+    scale: 0.95;
+  }
+}
+
+/* ------------------------------------------------------ reduced motion -- */
+
+/*
+ * Everything positional collapses. Opacity still carries state changes, because a piece
+ * that vanishes with no transition at all reads as a rendering glitch.
+ *
+ * No `!important` anywhere. This block is the last in the file, so every rule here only
+ * has to match the specificity of the one it overrides, which is why the two-part
+ * selectors are repeated verbatim rather than shortened.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .piece,
+  .piece-body,
+  .sq {
+    transition-duration: 0ms;
+    transition-delay: 0ms;
+    animation: none;
+  }
+
+  .piece[data-captured="true"] .piece-body {
+    transition-property: opacity;
+    transition-duration: 90ms;
+    transition-delay: 0ms;
+  }
+
+  .piece[data-mated="true"] .piece-body {
+    transition-duration: 0ms;
+  }
+
+  .piece[data-castling-rook="true"] {
+    transition-delay: 0ms;
+  }
+
+  .piece-layer[data-resetting="true"] .piece,
+  .piece[data-returning="true"] {
+    transition-duration: 0ms;
+    transition-delay: 0ms;
+  }
+
+  .hint-dot,
+  .hint-ring,
+  .shake,
+  .check-pulse,
+  .icon-spin,
+  .bar-equalise,
+  .digit-roll,
+  .turn-dot,
+  .tooltip-content,
+  .dialog-overlay,
+  .dialog-content {
+    animation: none;
+  }
+}
