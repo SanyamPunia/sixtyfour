@@ -22,14 +22,8 @@ pnpm dev
 `pnpm check` is the gate: lint, typecheck, tests, build. `pnpm verify` runs the built app
 in a real browser and asserts against the live DOM. Run it after `pnpm build`.
 
-To play a friend you also need the room server, which is a separate process:
-
-```bash
-pnpm room
-```
-
-It keeps rooms in memory unless `REDIS_URL` is set, which is fine for one process on a
-laptop and wrong for anything else. `CLAUDE.md` lists the four environment variables.
+Rooms need a Redis, set as `REDIS_URL`. Without it the board, the bot and everything else
+still work, and the room button says rooms are unavailable. There is nothing else to run.
 
 ## What is in here
 
@@ -49,12 +43,12 @@ Everything the game needs is written in this repository.
   a golden-path test. `corner-shape: squircle` is Chromium only, so the path is what ships.
 - **The sound.** Three clips totalling 13.5KB, each trimmed to its audible part. Mute is
   checked in one place, so nothing can make a noise by forgetting to ask.
-- **The rooms.** A WebSocket server on plain Node, with Redis holding the rooms and fanning
-  messages between processes so two players who land on different instances still see each
-  other. The server validates every move with the same engine the browser runs, because a
-  client is a thing anyone can rewrite. Every rule sits in one pure module that knows about
-  neither sockets nor Redis, so the races that matter are tested in milliseconds and then
-  re-tested unchanged against the live store.
+- **The rooms.** Five route handlers and a Redis. The server validates every move with the
+  same engine the browser runs, because a client is a thing anyone can rewrite, and it
+  resolves a move against the position's own legal list rather than trusting coordinates.
+  Every rule sits in one pure module that knows about neither HTTP nor Redis, so the races
+  that matter are tested in milliseconds and then re-tested unchanged against the live
+  store. It was built on WebSockets first. `MULTIPLAYER.md` records why that was reversed.
 
 Three dependencies were considered and measured away: a chess library (ours is faster than
 the search needs), an animation library (CSS covers it), and a squircle library (40 lines).
@@ -63,6 +57,7 @@ the search needs), an animation library (CSS covers it), and a squircle library 
 
 ```
 app/              layout, page, globals.css with every colour token
+app/api/rooms/    the room API, four lines per route
 components/game/  the one feature: board, pieces, controls, hooks
 components/ui/    button, tooltip, confirm dialog
 lib/chess/        pure engine, no React
@@ -71,7 +66,6 @@ lib/game/         reducer and piece identity, pure so node --test can reach it
 lib/room/         every rule a room has, plus the wire types both sides import
 lib/sound.ts      every clip and its volume
 lib/preferences.ts  difficulty, side and mute, stored and read back
-server/           the room server process, never imported by the site
 scripts/verify.mjs  drives the built app in Chrome, including two pages in one room
 ```
 

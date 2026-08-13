@@ -5,9 +5,34 @@ joins, and both see whether the other is actually there.
 
 This is the design record for the feature. `PLAN.md` covers the single-player product.
 
-**Built.** Every section below still describes what was built, and the reasoning in sections
-1, 2 and 8 is why it is shaped this way. Section 14 was the build order and was followed.
-The paragraphs below record what changed on contact with the work.
+**Built, then rebuilt on a different transport.** Section 2 argued for WebSockets and was
+followed. It was then reversed, deliberately, and section 2 is left standing because the
+reasoning in it is still correct about what WebSockets buy. What changed is what they cost.
+
+## The transport reversal
+
+WebSockets need a process that outlives a request. Next.js route handlers are
+`(Request) => Response`, and that signature cannot express taking over a connection: a
+WebSocket handshake ends in `101 Switching Protocols`, after which the same TCP connection
+stops speaking HTTP for good. Node surfaces that as an `upgrade` event carrying the raw
+socket. There is no `Response` that means "and now give me the socket", so the framework
+cannot expose it even if it wanted to. A serverless function also ends when it returns,
+which is the opposite lifecycle to one that holds state per connection.
+
+So websockets meant a second process to deploy and pay for. That was built and it worked:
+plain `http` and `ws`, Redis pub/sub for cross-instance fan-out, tested with two servers
+against one store. It was then removed in favour of polling on route handlers, because one
+deployable is worth more here than instant moves. The rules did not change: `lib/room/`
+never knew what the transport was.
+
+What was given up, stated plainly. A move can take up to a poll interval to appear, against
+a board tuned to a 190ms slide. Presence is only as fresh as the last poll. Both are real
+and neither is hidden.
+
+What was gained. Nothing to deploy but the site, no second thing to keep alive, no origin
+allowlist, no `wss://` URL baked into a build, and one environment variable instead of four.
+The polling rate follows what is being waited for and stops while the tab is hidden, so an
+idle game is close to free.
 
 ## What the build changed
 
@@ -16,25 +41,25 @@ turn first. A player who missed two moves is on their own turn holding a legal-l
 so a turn check would refuse it with a reason that is both false and unactionable. The one
 true answer is that they are behind, and only the version knows that.
 
-**Taking a seat advances the room version, so the player already seated is told.** This was
-not in the plan and is the one bug in the feature that reports healthy while the game simply
-never starts: the first player's opening move is judged against a board that moved on when
-their opponent sat down, and is correctly refused as stale. A join now publishes the
-snapshot. `server/hub.test.ts` has a test named for it.
+**Taking a seat advances the room version.** This was not in the plan, and on the socket
+transport it was the one bug in the feature that reported healthy while the game never
+started: the first player's opening move was judged against a board that moved on when their
+opponent sat down, and was correctly refused as stale. Polling makes it self-correcting,
+since the next poll carries the new version, but the rule is the same and worth knowing.
 
-**Presence is one number, not a state machine.** The plan described three states and a
-grace window. All three fall out of how stale one timestamp is, so a clean disconnect needs
-no flag of its own: it backdates the heartbeat and the value ages into `gone` by itself.
+**Presence is one number, not a state machine.** The plan described three states and a grace
+window. All three fall out of how stale one timestamp is, so nothing needs a flag for
+"disconnected". A poll is what keeps a seat warm, and a page that stops polling goes stale
+by itself.
 
 **Seats do not swap on a rematch.** Swapping is the politer convention, but it changes a
 player's colour underneath them with no move to explain it, and the honest version needs a
 message of its own. Section 16 listed this as open.
 
 **The rules ended up knowing nothing.** `lib/room/service.ts` takes a store and returns
-decisions. The server decodes, calls one function, and publishes. That split is what let
-every race be tested in milliseconds against an in-memory store and then re-tested unchanged
-against the live one, which is how the join race and the move race are proven over a real
-network rather than argued about.
+decisions. That split is why the transport could be replaced without touching a rule, and
+why every race is tested in milliseconds against an in-memory store and then re-tested
+unchanged against the live one.
 
 ---
 
