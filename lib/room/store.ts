@@ -6,16 +6,14 @@
  * every rule in it is tested against the fast one and then re-tested against the real one
  * without changing a line of the service.
  *
- * Storage and fan-out sit in the same interface on purpose. They are the same Redis, they
- * fail at the same time, and splitting them would put a second lifecycle in the server for
- * no gain.
+ * There is no publish or subscribe here. Rooms are polled, so a change is found by asking
+ * rather than by being told, and there is no long-lived process for a message to be
+ * delivered to. `MULTIPLAYER.md` records why the transport ended up that way.
  */
 
-import type { Presence, Room, Seat, SeatMap, ServerMessage } from "./protocol.ts";
+import type { Presence, Room, Seat, SeatMap } from "./protocol.ts";
 
 export type CreateOutcome = "created" | "exists" | "full";
-
-export type Unsubscribe = () => Promise<void>;
 
 export interface RoomStore {
   /**
@@ -47,11 +45,6 @@ export interface RoomStore {
   touch(key: string, seat: Seat, now: number): Promise<void>;
 
   presence(key: string, now: number): Promise<SeatMap<Presence>>;
-
-  /** Fan-out to every process holding a socket for this room, including this one. */
-  publish(key: string, message: ServerMessage): Promise<void>;
-
-  subscribe(key: string, handler: (message: ServerMessage) => void): Promise<Unsubscribe>;
 
   close(): Promise<void>;
 }

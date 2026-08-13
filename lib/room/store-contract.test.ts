@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, beforeEach, describe, test } from "node:test";
 import { MemoryRoomStore } from "./memory-store.ts";
 import { AWAY_MS, HERE_MS } from "./presence.ts";
-import type { Room, ServerMessage } from "./protocol.ts";
+import type { Room } from "./protocol.ts";
 import { RedisRoomStore } from "./redis-store.ts";
 import { createRoom, joinRoom, playMove, ROOM_CAP } from "./service.ts";
 import type { RoomStore } from "./store.ts";
@@ -40,15 +40,6 @@ function room(key: string, version = 0, moves: string[] = []): Room {
     seats: { white: "w-secret", black: null },
     createdAt: NOW,
     expiresAt: NOW + 60_000,
-  };
-}
-
-function presenceMessage(key: string): ServerMessage {
-  return {
-    protocol: 1,
-    type: "presence",
-    key,
-    presence: { white: "here", black: "away" },
   };
 }
 
@@ -169,62 +160,6 @@ function contract(
       assert.deepEqual(await store.presence(key, NOW), { white: "here", black: "here" });
     });
 
-    test("a published message reaches a subscriber", opts, async () => {
-      const store = get();
-      const key = `B${randomUUID().slice(0, 5).toUpperCase()}`;
-      const seen: ServerMessage[] = [];
-      const off = await store.subscribe(key, (m) => seen.push(m));
-
-      await store.publish(key, presenceMessage(key));
-      await settle();
-
-      assert.equal(seen.length, 1, "the message did not arrive");
-      assert.deepEqual(seen[0], presenceMessage(key));
-      await off();
-    });
-
-    test("an unsubscribed handler stops hearing", opts, async () => {
-      const store = get();
-      const key = `U${randomUUID().slice(0, 5).toUpperCase()}`;
-      const seen: ServerMessage[] = [];
-      const off = await store.subscribe(key, (m) => seen.push(m));
-      await off();
-      await store.publish(key, presenceMessage(key));
-      await settle();
-      assert.deepEqual(seen, []);
-    });
-
-    test("a message goes only to its own room", opts, async () => {
-      const store = get();
-      const mine = `M${randomUUID().slice(0, 5).toUpperCase()}`;
-      const theirs = `N${randomUUID().slice(0, 5).toUpperCase()}`;
-      const seen: string[] = [];
-      const offMine = await store.subscribe(mine, () => seen.push("mine"));
-      const offTheirs = await store.subscribe(theirs, () => seen.push("theirs"));
-
-      await store.publish(mine, presenceMessage(mine));
-      await settle();
-
-      assert.deepEqual(seen, ["mine"]);
-      await offMine();
-      await offTheirs();
-    });
-
-    test("two subscribers on one room both hear it", opts, async () => {
-      const store = get();
-      const key = `T${randomUUID().slice(0, 5).toUpperCase()}`;
-      const seen: string[] = [];
-      const off1 = await store.subscribe(key, () => seen.push("one"));
-      const off2 = await store.subscribe(key, () => seen.push("two"));
-
-      await store.publish(key, presenceMessage(key));
-      await settle();
-
-      assert.deepEqual(seen.sort(), ["one", "two"]);
-      await off1();
-      await off2();
-    });
-
     test("the join race resolves to one seat", opts, async () => {
       const store = get();
       const created = await createRoom(store, { prefer: "white", now: NOW });
@@ -263,11 +198,6 @@ function contract(
       assert.equal(stored.version, 2);
     });
   });
-}
-
-/** Lets a publish that has crossed a socket arrive before the assertion reads it. */
-function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, REDIS_URL === "" ? 0 : 250));
 }
 
 const memory = new MemoryRoomStore();

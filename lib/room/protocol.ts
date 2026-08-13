@@ -1,11 +1,12 @@
 /**
- * Everything that crosses the socket, and the record behind it.
+ * Everything that crosses the network, and the record behind it.
  *
- * The wire is the contract between two pieces of code that deploy separately, so the
- * client and the server can be running different builds at the same time. Every message
- * carries `protocol`, and a mismatch is refused rather than guessed at.
+ * A browser holds a page for as long as it is open, so it can still be running a build the
+ * server has replaced. Every response carries `protocol`, and a mismatch is reported rather
+ * than guessed at.
  *
- * No React and no Redis here. Both sides import this file.
+ * No React and no Redis here. The browser and the route handlers both import this file, and
+ * that shared import is what stops the two from drifting.
  */
 
 import type { GameStatus } from "../chess/types.ts";
@@ -53,22 +54,35 @@ export interface RoomSnapshot {
 /**
  * Three states, because two are a lie.
  *
- * A socket drops on every tab switch on mobile and on every brief network change, and
- * reporting that as "gone" makes the indicator flicker through a disconnection the player
- * never noticed. `away` is the grace window that absorbs it.
+ * Polling stops whenever a phone locks or a tab goes to the background, and reporting that
+ * as "gone" makes the indicator flicker through an interruption neither player noticed.
+ * `away` is the grace window that absorbs it.
  */
 export type Presence = "here" | "away" | "gone";
 
-export interface Envelope {
+/**
+ * The three answers the API gives.
+ *
+ * `state` is what a poll returns and carries no secret. `joined` is the only response that
+ * ever contains a token, and only to the browser that just earned it. `rejected` carries the
+ * room back whenever there is one, because a browser that guessed wrong needs something
+ * truthful to replace its board with.
+ */
+export interface JoinedBody {
   protocol: number;
+  type: "joined";
+  seat: Seat;
+  token: string;
+  room: RoomSnapshot;
+  presence: SeatMap<Presence>;
 }
 
-export type ClientMessage =
-  | (Envelope & { type: "create"; prefer?: SeatPreference })
-  | (Envelope & { type: "join"; key: string; token?: string; prefer?: SeatPreference })
-  | (Envelope & { type: "move"; key: string; token: string; uci: string; at: number })
-  | (Envelope & { type: "rematch"; key: string; token: string })
-  | (Envelope & { type: "ping"; key: string; token: string });
+export interface StateBody {
+  protocol: number;
+  type: "state";
+  room: RoomSnapshot;
+  presence: SeatMap<Presence>;
+}
 
 export type RejectReason =
   | "not-found"
@@ -77,20 +91,17 @@ export type RejectReason =
   | "not-your-turn"
   | "game-over"
   | "illegal"
-  | "stale";
+  | "stale"
+  | "unavailable";
 
-export type ServerMessage =
-  | (Envelope & {
-      type: "joined";
-      seat: Seat;
-      token: string;
-      room: RoomSnapshot;
-      presence: SeatMap<Presence>;
-    })
-  | (Envelope & { type: "moved"; uci: string; room: RoomSnapshot })
-  | (Envelope & { type: "presence"; key: string; presence: SeatMap<Presence> })
-  | (Envelope & { type: "rejected"; reason: RejectReason; room: RoomSnapshot | null })
-  | (Envelope & { type: "error"; code: string; message: string });
+export interface RejectedBody {
+  protocol: number;
+  type: "rejected";
+  reason: RejectReason;
+  room: RoomSnapshot | null;
+}
+
+export type ApiResponse = JoinedBody | StateBody | RejectedBody;
 
 export function opposite(seat: Seat): Seat {
   return seat === "white" ? "black" : "white";

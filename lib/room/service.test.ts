@@ -473,31 +473,3 @@ describe("presence", () => {
     assert.deepEqual(await store.presence(key, NOW), { white: "here", black: "away" });
   });
 });
-
-describe("fan-out", () => {
-  test("a published message reaches every subscriber for that room", async () => {
-    const seen: string[] = [];
-    const off1 = await store.subscribe("AAA111", (m) => seen.push(`1:${m.type}`));
-    const off2 = await store.subscribe("AAA111", (m) => seen.push(`2:${m.type}`));
-    await store.subscribe("BBB222", (m) => seen.push(`other:${m.type}`));
-
-    await store.publish("AAA111", {
-      protocol: 1,
-      type: "presence",
-      key: "AAA111",
-      presence: { white: "here", black: "gone" },
-    });
-
-    assert.deepEqual(seen.sort(), ["1:presence", "2:presence"]);
-    await off1();
-    await off2();
-    seen.length = 0;
-    await store.publish("AAA111", {
-      protocol: 1,
-      type: "presence",
-      key: "AAA111",
-      presence: { white: "here", black: "here" },
-    });
-    assert.deepEqual(seen, [], "an unsubscribed listener still fired");
-  });
-});

@@ -1,24 +1,25 @@
 /**
- * The `RoomStore` that actually runs, backed by Redis.
- *
- * Two connections, because a subscribing connection cannot run commands. That is a
- * protocol rule rather than a client quirk: once a connection subscribes it will only
- * accept subscribe and unsubscribe until it stops.
+ * The `RoomStore` that actually runs, backed by Redis over its native protocol.
  *
  * Everything that has to be atomic is a script. Redis runs a script to completion without
  * interleaving anything else, which is the only reason the compare-and-swap and the room
- * cap hold when two processes act at the same moment. A read followed by a write from the
- * client would not, however short the gap looks.
+ * cap hold when two requests land at the same moment. A read followed by a write from the
+ * caller would not, however short the gap looks, and on a serverless host there is no
+ * single process to serialise them.
  *
  * The scripts avoid `cjson` and compare a version held in its own key instead. Decoding the
  * room inside Lua would work, but it makes the stored shape part of the script, and then a
  * field rename is a Redis migration rather than a TypeScript one.
+ *
+ * TCP rather than the REST API. Route handlers run on Node, so a socket to Redis is
+ * available, and using it means the connection string already in the environment is the
+ * only credential this needs.
  */
 
 import Redis from "ioredis";
 import { AWAY_MS, presenceOf } from "./presence.ts";
-import type { Presence, Room, Seat, SeatMap, ServerMessage } from "./protocol.ts";
-import type { CreateOutcome, RoomStore, Unsubscribe } from "./store.ts";
+import type { Presence, Room, Seat, SeatMap } from "./protocol.ts";
+import type { CreateOutcome, RoomStore } from "./store.ts";
 
 /**
  * Creates only when the key is free and the cap has room.
@@ -61,29 +62,19 @@ export interface RedisRoomStoreOptions {
 }
 
 export class RedisRoomStore implements RoomStore {
-  private commands: Redis;
-  private subscriber: Redis;
+  private redis: Redis;
   private prefix: string;
-  private handlers = new Map<string, Set<(message: ServerMessage) => void>>();
 
   constructor(url: string, options: RedisRoomStoreOptions = {}) {
     this.prefix = options.prefix ?? "sixtyfour:";
-    this.commands = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
-    this.subscriber = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3 });
-
-    this.subscriber.on("message", (channel: string, payload: string) => {
-      const set = this.handlers.get(channel);
-      if (set === undefined || set.size === 0) return;
-      let message: ServerMessage;
-      try {
-        message = JSON.parse(payload) as ServerMessage;
-      } catch {
-        // Something else is publishing on our channel. Dropping it is right: this process
-        // cannot act on a message it cannot read, and throwing here would take down the
-        // shared subscriber connection for every room in the process.
-        return;
-      }
-      for (const handler of set) handler(message);
+    this.redis = new Redis(url, {
+      maxRetriesPerRequest: 2,
+      // A request that cannot reach Redis should fail and be retried by the next poll,
+      // rather than hold a function open until the platform kills it.
+      connectTimeout: 5_000,
+      // Commands issued in the same tick go out in one round trip. A poll asks three
+      // questions, and this makes that one trip instead of three.
+      enableAutoPipelining: true,
     });
   }
 
@@ -103,12 +94,8 @@ export class RedisRoomStore implements RoomStore {
     return `${this.prefix}seen:${key}:${seat}`;
   }
 
-  private channel(key: string): string {
-    return `${this.prefix}ch:${key}`;
-  }
-
   async create(room: Room, cap: number): Promise<CreateOutcome> {
-    const outcome = await this.commands.eval(
+    const outcome = await this.redis.eval(
       CREATE,
       3,
       this.roomKey(room.key),
@@ -125,7 +112,7 @@ export class RedisRoomStore implements RoomStore {
   }
 
   async get(key: string): Promise<Room | null> {
-    const raw = await this.commands.get(this.roomKey(key));
+    const raw = await this.redis.get(this.roomKey(key));
     if (raw === null) return null;
     try {
       return JSON.parse(raw) as Room;
@@ -135,7 +122,7 @@ export class RedisRoomStore implements RoomStore {
   }
 
   async swap(next: Room, expectedVersion: number): Promise<boolean> {
-    const written = await this.commands.eval(
+    const written = await this.redis.eval(
       SWAP,
       3,
       this.roomKey(next.key),
@@ -151,7 +138,7 @@ export class RedisRoomStore implements RoomStore {
   }
 
   async remove(key: string): Promise<void> {
-    await this.commands
+    await this.redis
       .multi()
       .del(this.roomKey(key), this.versionKey(key))
       .del(this.seenKey(key, "white"), this.seenKey(key, "black"))
@@ -160,18 +147,18 @@ export class RedisRoomStore implements RoomStore {
   }
 
   async activeCount(now: number): Promise<number> {
-    await this.commands.zremrangebyscore(this.indexKey(), "-inf", now);
-    return await this.commands.zcard(this.indexKey());
+    await this.redis.zremrangebyscore(this.indexKey(), "-inf", now);
+    return await this.redis.zcard(this.indexKey());
   }
 
   async touch(key: string, seat: Seat, now: number): Promise<void> {
     // The key's own lifetime is what turns a stopped heartbeat into "gone", so nothing has
     // to sweep it. `presenceOf` handles the window in between.
-    await this.commands.set(this.seenKey(key, seat), String(now), "PX", AWAY_MS + 5_000);
+    await this.redis.set(this.seenKey(key, seat), String(now), "PX", AWAY_MS + 5_000);
   }
 
   async presence(key: string, now: number): Promise<SeatMap<Presence>> {
-    const [white, black] = await this.commands.mget(
+    const [white, black] = await this.redis.mget(
       this.seenKey(key, "white"),
       this.seenKey(key, "black"),
     );
@@ -186,43 +173,36 @@ export class RedisRoomStore implements RoomStore {
     };
   }
 
-  async publish(key: string, message: ServerMessage): Promise<void> {
-    await this.commands.publish(this.channel(key), JSON.stringify(message));
-  }
-
-  async subscribe(
-    key: string,
-    handler: (message: ServerMessage) => void,
-  ): Promise<Unsubscribe> {
-    const channel = this.channel(key);
-    let set = this.handlers.get(channel);
-    if (set === undefined) {
-      set = new Set();
-      this.handlers.set(channel, set);
-      // Only the first listener in this process costs a round trip. Two players in one
-      // room on one instance share the one subscription.
-      await this.subscriber.subscribe(channel);
-    }
-    set.add(handler);
-
-    return async () => {
-      const current = this.handlers.get(channel);
-      if (current === undefined) return;
-      current.delete(handler);
-      if (current.size > 0) return;
-      this.handlers.delete(channel);
-      await this.subscriber.unsubscribe(channel);
-    };
-  }
-
   async close(): Promise<void> {
-    this.handlers.clear();
-    await Promise.all([this.commands.quit(), this.subscriber.quit()]);
+    await this.redis.quit();
   }
 
   /** Removes every key this prefix owns. Only ever called by a test tearing itself down. */
   async drop(): Promise<void> {
-    const keys = await this.commands.keys(`${this.prefix}*`);
-    if (keys.length > 0) await this.commands.del(...keys);
+    const keys = await this.redis.keys(`${this.prefix}*`);
+    if (keys.length > 0) await this.redis.del(...keys);
   }
+}
+
+/**
+ * One store per running instance, built on first use.
+ *
+ * Route handlers are called, not started, so there is no place to construct this once and
+ * hand it around. A module-level singleton is the equivalent: the instance is reused across
+ * every request that lands on it, and so is its connection. Building a new client per
+ * request would open a socket per request, which Redis notices long before we would.
+ */
+let shared: RedisRoomStore | null = null;
+
+export function sharedRoomStore(): RedisRoomStore | null {
+  const url = process.env.REDIS_URL ?? "";
+  if (url === "") return null;
+  if (shared === null) {
+    // A prefix per deployment keeps preview builds and verification runs out of production's
+    // five-room cap. They share one Redis, and without this a preview someone opened would
+    // take a slot from a real game.
+    const prefix = process.env.REDIS_PREFIX ?? "";
+    shared = new RedisRoomStore(url, prefix === "" ? {} : { prefix });
+  }
+  return shared;
 }

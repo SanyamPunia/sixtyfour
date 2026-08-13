@@ -12,13 +12,12 @@
  */
 
 import { presenceOf } from "./presence.ts";
-import type { Presence, Room, Seat, SeatMap, ServerMessage } from "./protocol.ts";
-import type { CreateOutcome, RoomStore, Unsubscribe } from "./store.ts";
+import type { Presence, Room, Seat, SeatMap } from "./protocol.ts";
+import type { CreateOutcome, RoomStore } from "./store.ts";
 
 export class MemoryRoomStore implements RoomStore {
   private rooms = new Map<string, Room>();
   private seen = new Map<string, number>();
-  private listeners = new Map<string, Set<(message: ServerMessage) => void>>();
 
   /** Set by a test to make a swap lose a race it would otherwise win. */
   onBeforeSwap: (() => void | Promise<void>) | null = null;
@@ -70,31 +69,8 @@ export class MemoryRoomStore implements RoomStore {
     };
   }
 
-  async publish(key: string, message: ServerMessage): Promise<void> {
-    // Cloned per listener, matching a real subscriber, which parses its own JSON and so
-    // can never share an object with another subscriber.
-    for (const handler of this.listeners.get(key) ?? []) handler(structuredClone(message));
-  }
-
-  async subscribe(
-    key: string,
-    handler: (message: ServerMessage) => void,
-  ): Promise<Unsubscribe> {
-    let set = this.listeners.get(key);
-    if (set === undefined) {
-      set = new Set();
-      this.listeners.set(key, set);
-    }
-    set.add(handler);
-    return async () => {
-      set.delete(handler);
-      if (set.size === 0) this.listeners.delete(key);
-    };
-  }
-
   async close(): Promise<void> {
     this.rooms.clear();
     this.seen.clear();
-    this.listeners.clear();
   }
 }
