@@ -54,14 +54,18 @@ export type GameAction =
   | { type: "cancelPromotion" }
   | { type: "beginThinking" }
   | { type: "setDifficulty"; difficulty: Difficulty }
-  | { type: "newGame" };
+  | { type: "newGame" }
+  | { type: "setSide"; color: Color };
 
-export function createGame(difficulty: Difficulty = "medium"): GameState {
+export function createGame(
+  difficulty: Difficulty = "medium",
+  humanColor: Color = WHITE,
+): GameState {
   const position = startPosition();
   return {
     position,
     pieces: initialPieces(position),
-    humanColor: WHITE,
+    humanColor,
     selected: null,
     legalTargets: [],
     lastMove: null,
@@ -198,7 +202,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // The piece ids come from scanning the start position, so they are the same ids the
       // board is already showing. React keeps those nodes, and every surviving piece
       // transitions home instead of popping there.
-      return { ...createGame(state.difficulty), resetToken: state.resetToken + 1 };
+      return {
+        ...createGame(state.difficulty, state.humanColor),
+        resetToken: state.resetToken + 1,
+      };
+
+    case "setSide":
+      // Changing sides is starting again. There is no meaningful way to swap colours
+      // halfway through a game.
+      return state.humanColor === action.color
+        ? state
+        : {
+            ...createGame(state.difficulty, action.color),
+            resetToken: state.resetToken + 1,
+          };
 
     default:
       return state;

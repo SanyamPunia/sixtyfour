@@ -10,6 +10,7 @@ interface PieceProps {
   mated: boolean;
   /** The rook half of a castle, which trails the king by one beat. */
   castlingRook: boolean;
+  flipped: boolean;
   /** Stagger index for the entrance, counted outward from the centre files. */
   enterDelay: number;
 }
@@ -27,10 +28,11 @@ export function Piece({
   lifted,
   mated,
   castlingRook,
+  flipped,
   enterDelay,
 }: PieceProps) {
-  const column = columnOf(piece.square);
-  const row = rowOf(piece.square);
+  const column = columnOf(piece.square, flipped);
+  const row = rowOf(piece.square, flipped);
 
   // A moving or lifted piece rides over the piece it is taking.
   const zIndex = lifted ? 3 : piece.captured ? 1 : 2;

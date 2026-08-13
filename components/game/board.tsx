@@ -30,6 +30,8 @@ interface BoardProps {
   matedKing: SquareIndex | null;
   castlingRookId: string | null;
   interactive: boolean;
+  /** True when the player is Black, so their pieces sit at the bottom. */
+  flipped: boolean;
   shakeToken: number;
   resetToken: number;
   pendingPromotion: { to: SquareIndex } | null;
@@ -66,6 +68,7 @@ export function Board({
   matedKing,
   castlingRookId,
   interactive,
+  flipped,
   shakeToken,
   resetToken,
   pendingPromotion,
@@ -190,7 +193,7 @@ export function Board({
   const squares = [];
   for (let row = 0; row < 8; row++) {
     for (let column = 0; column < 8; column++) {
-      const square = squareAt(row, column);
+      const square = squareAt(row, column, flipped);
       const target = targetBySquare.get(square);
       const occupant = at(position.board, square);
       const capturing = target !== undefined && isCapture(target);
@@ -248,6 +251,7 @@ export function Board({
             lifted={selected === piece.square && !piece.captured}
             mated={matedKing === piece.square}
             castlingRook={castlingRookId === piece.id}
+            flipped={flipped}
             enterDelay={Math.abs(fileOf(piece.square) - 3.5)}
           />
         ))}
@@ -255,6 +259,7 @@ export function Board({
       {pendingPromotion !== null && (
         <PromotionPicker
           square={pendingPromotion.to}
+          flipped={flipped}
           onChoose={onPromote}
           onCancel={onCancelPromotion}
         />

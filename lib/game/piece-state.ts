@@ -84,17 +84,29 @@ export function applyMoveToPieces(
   });
 }
 
-/** Board column for a square, with White at the bottom and files running a to h. */
-export function columnOf(square: Square): number {
-  return fileOf(square);
+/*
+ * Board coordinates.
+ *
+ * `flipped` means the player is Black, so their pieces sit at the bottom and the files run
+ * h to a. Orientation lives here and nowhere else: every component asks these three
+ * functions rather than doing the arithmetic, so the board, the pieces and the promotion
+ * stack cannot disagree about which way round it is.
+ *
+ * The light and dark squares work out on their own. a1 is dark either way, because
+ * flipping inverts both the row and the column and their sum keeps its parity.
+ */
+
+/** Board column for a square. Column 0 is the a file, or the h file when flipped. */
+export function columnOf(square: Square, flipped = false): number {
+  return flipped ? 7 - fileOf(square) : fileOf(square);
 }
 
-/** Board row for a square. Row 0 is the eighth rank, at the top. */
-export function rowOf(square: Square): number {
-  return 7 - rankOf(square);
+/** Board row for a square. Row 0 is the eighth rank, or the first when flipped. */
+export function rowOf(square: Square, flipped = false): number {
+  return flipped ? rankOf(square) : 7 - rankOf(square);
 }
 
 /** The square at a grid cell, which is the inverse of the two above. */
-export function squareAt(row: number, column: number): Square {
-  return (7 - row) * 16 + column;
+export function squareAt(row: number, column: number, flipped = false): Square {
+  return flipped ? row * 16 + (7 - column) : (7 - row) * 16 + column;
 }

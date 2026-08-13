@@ -18,6 +18,7 @@ const NAMES: Record<PromotionType, string> = {
 interface PromotionPickerProps {
   /** The square the pawn is arriving on. */
   square: number;
+  flipped: boolean;
   onChoose: (piece: PromotionType) => void;
   onCancel: () => void;
 }
@@ -32,9 +33,9 @@ interface PromotionPickerProps {
  * A scrim behind it takes a click as a cancel. Backing out has to be possible: the move is
  * not played until one of these is chosen.
  */
-export function PromotionPicker({ square, onChoose, onCancel }: PromotionPickerProps) {
-  const column = columnOf(square);
-  const row = rowOf(square);
+export function PromotionPicker({ square, flipped, onChoose, onCancel }: PromotionPickerProps) {
+  const column = columnOf(square, flipped);
+  const row = rowOf(square, flipped);
   // Promoting on the near edge would run the stack off the board, so it flips upward.
   const downward = row <= 3;
 
