@@ -732,44 +732,74 @@ for (const scheme of ["light", "dark"]) {
      * a square that was just clicked do not exist yet on the following line.
      */
     const preference = botCapture === null ? "quiet" : "capture";
-    const played = await page.evaluate(async (want) => {
+
+    /*
+     * Plan in the page, execute with the mouse.
+     *
+     * Selecting is the only way to discover legal targets, so the plan step selects, reads
+     * the hints, and deselects. The move itself is then a real pointer drag, which means
+     * every move here exercises the drag path, and a pawn reaching the last rank exercises
+     * drag-to-promote, which nothing else in this suite reaches.
+     */
+    const plan = await page.evaluate(async (want) => {
       const frame = () => new Promise((r) => requestAnimationFrame(r));
 
-      // The loop pushes pawns, so it reaches the last rank. The picker's scrim covers the
-      // board until it is answered, and every later click would land on it.
       const picker = document.querySelector(".promo-choice");
       if (picker !== null) {
         picker.click();
         await frame();
-        return "quiet";
+        return { kind: "promoted" };
       }
-      // A finished game is inert, and no further move is coming.
-      if (document.querySelector('.board-surface[data-over="true"]') !== null) return "over";
-      const ownSquares = () =>
-        [...document.querySelectorAll(".sq")].filter((n) =>
-          n.getAttribute("aria-label").includes("your "),
-        );
+      if (document.querySelector('.board-surface[data-over="true"]') !== null) {
+        return { kind: "over" };
+      }
+
+      const own = [...document.querySelectorAll(".sq")].filter((n) =>
+        n.getAttribute("aria-label").includes("your "),
+      );
       const order =
         want === "capture" ? [".hint-ring", ".hint-dot"] : [".hint-dot", ".hint-ring"];
 
       for (const selector of order) {
-        for (const square of ownSquares()) {
+        for (const square of own) {
           square.click();
           await frame();
-          const target = document.querySelector(selector);
-          if (target !== null) {
-            target.closest(".sq").click();
+          const target = document.querySelector(selector)?.closest(".sq");
+          if (target !== undefined && target !== null) {
+            const plan = {
+              kind: selector === ".hint-ring" ? "capture" : "quiet",
+              from: square.dataset.sq,
+              to: target.dataset.sq,
+              toLabel: target.getAttribute("aria-label"),
+            };
+            square.click(); // drop the selection, the mouse will make the move
             await frame();
-            return selector === ".hint-ring" ? "capture" : "quiet";
+            return plan;
           }
-          // Drop the selection before trying the next square, or the next click lands as
-          // a move for the piece still being held.
           square.click();
           await frame();
         }
       }
-      return "none";
+      return { kind: "none" };
     }, preference);
+
+    const played = plan.kind;
+    if (played !== "none" && played !== "over" && played !== "promoted") {
+      const box = (sq) =>
+        page.$eval(`[data-sq="${sq}"]`, (n) => {
+          const r = n.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        });
+      const a = await box(plan.from);
+      const b = await box(plan.to);
+      await page.mouse.move(a.x, a.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 5; i++) {
+        await page.mouse.move(a.x + ((b.x - a.x) * i) / 5, a.y + ((b.y - a.y) * i) / 5);
+      }
+      await page.mouse.up();
+      await new Promise((r) => setTimeout(r, 60));
+    }
     if (played === "none" || played === "over") break;
 
     const afterHuman = await countPieces();
@@ -845,6 +875,174 @@ for (const scheme of ["light", "dark"]) {
     check("it does not sit on the board", credit.overlapsBoard === false);
   }
 
+  /*
+   * Drag a pawn all the way to the last rank.
+   *
+   * Its own phase on a fresh game, because sharing a loop with the capture chase meant
+   * neither finished inside a sane turn budget. The bot is dropped to easy first: it
+   * leaves material alone, so a pawn can actually walk the board.
+   */
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {
+    timeout: 5000,
+  });
+  await page.click('[aria-label^="Bot difficulty"]');
+  await page.click('[aria-label^="Bot difficulty"]');
+
+  let dragPromotion = null;
+  for (let turn = 0; turn < 30 && dragPromotion === null; turn++) {
+    const plan = await page.evaluate(async () => {
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      if (document.querySelector(".promo-choice") !== null) return { kind: "picker" };
+      if (document.querySelector('.board-surface[data-over="true"]') !== null) {
+        return { kind: "over" };
+      }
+      // The most advanced pawn first, so this converges instead of wandering.
+      const pawns = [...document.querySelectorAll(".sq")]
+        .filter((n) => n.getAttribute("aria-label").includes("your pawn"))
+        .sort(
+          (a, b) =>
+            Number(b.getAttribute("aria-label")[1]) - Number(a.getAttribute("aria-label")[1]),
+        );
+      for (const square of pawns) {
+        square.click();
+        await frame();
+        const target =
+          document.querySelector(".hint-dot")?.closest(".sq") ??
+          document.querySelector(".hint-ring")?.closest(".sq");
+        if (target !== undefined && target !== null) {
+          const plan = { kind: "move", from: square.dataset.sq, to: target.dataset.sq };
+          square.click();
+          await frame();
+          return plan;
+        }
+        square.click();
+        await frame();
+      }
+      return { kind: "none" };
+    });
+    if (plan.kind !== "move") break;
+
+    const box = (sq) =>
+      page.$eval(`[data-sq="${sq}"]`, (n) => {
+        const r = n.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+    const a = await box(plan.from);
+    const b = await box(plan.to);
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    for (let i = 1; i <= 5; i++) {
+      await page.mouse.move(a.x + ((b.x - a.x) * i) / 5, a.y + ((b.y - a.y) * i) / 5);
+    }
+    await page.mouse.up();
+    await new Promise((r) => setTimeout(r, 80));
+
+    const opened = await page.evaluate(() => document.querySelectorAll(".promo-choice").length);
+    if (opened > 0) {
+      dragPromotion = opened;
+      break;
+    }
+    await page
+      .waitForFunction(
+        () => document.querySelector("[aria-live]").textContent.trim() === "your move",
+        { timeout: 12000 },
+      )
+      .catch(() => {});
+  }
+  check(
+    "a pawn dragged to the last rank still asks",
+    dragPromotion === 4,
+    dragPromotion === null ? "no promotion was reached" : `${dragPromotion} choices`,
+  );
+  if (dragPromotion !== null) await page.click('[aria-label="Promote to knight"]');
+
+  // Mute silences everything, and survives a reload along with the other two choices.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {
+    timeout: 5000,
+  });
+  // Counted after the mute button's own click, which legitimately sounds because it is
+  // still unmuted at the moment it is pressed. Counting from before it would be measuring
+  // that instead of the silence.
+  await page.click('[aria-label="Mute the game"]');
+  await page.evaluate(() => {
+    window.__plays.length = 0;
+  });
+  await page.click('[aria-label^="Toggle light"]');
+  await page.click('[aria-label^="Toggle light"]');
+  const whileMuted = await page.evaluate(() => window.__plays.length);
+  check("muting silences everything", whileMuted === 0, `${whileMuted} play call(s)`);
+
+  await page.click('[aria-label="Unmute the game"]');
+  await page.evaluate(() => {
+    window.__plays.length = 0;
+  });
+  await page.click('[aria-label^="Toggle light"]');
+  await page.click('[aria-label^="Toggle light"]');
+  const afterUnmute = await page.evaluate(() => window.__plays.length);
+  check("unmuting restores them", afterUnmute === 2, `${afterUnmute} play call(s)`);
+
+  // Changed inside the check, so it cannot pass by comparing a default to itself. The
+  // first version did exactly that and reported success without exercising anything.
+  const readDifficulty = () =>
+    page.evaluate(() =>
+      document.querySelector('[aria-label^="Bot difficulty"]').getAttribute("aria-label"),
+    );
+  const difficultyStart = await readDifficulty();
+  await page.click('[aria-label^="Bot difficulty"]');
+  await new Promise((r) => setTimeout(r, 200));
+  const difficultyChanged = await readDifficulty();
+  check(
+    "the difficulty actually changed",
+    difficultyChanged !== difficultyStart,
+    `${difficultyStart} -> ${difficultyChanged}`,
+  );
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {
+    timeout: 5000,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const difficultyAfter = await readDifficulty();
+  check(
+    "and survives a reload",
+    difficultyAfter === difficultyChanged,
+    `${difficultyChanged} -> ${difficultyAfter}`,
+  );
+
+  // Playing as Black turns the board round: a1 moves from the bottom left to the top right.
+  const cornerBefore = await page.evaluate(() =>
+    document.querySelector(".sq").getAttribute("aria-label"),
+  );
+  await page.click('[aria-label^="Play as black"]');
+  await new Promise((r) => setTimeout(r, 500));
+  const flipped = await page.evaluate(() => ({
+    corner: document.querySelector(".sq").getAttribute("aria-label"),
+    ownAtBottom: [...document.querySelectorAll(".sq")]
+      .slice(56)
+      .every((n) => n.getAttribute("aria-label").includes("your ")),
+  }));
+  check(
+    "playing as black turns the board round",
+    flipped.corner !== cornerBefore && flipped.corner.startsWith("h1"),
+    `${cornerBefore} -> ${flipped.corner}`,
+  );
+  check("your pieces are still the near side", flipped.ownAtBottom);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {
+    timeout: 5000,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const sideAfter = await page.evaluate(() =>
+    document.querySelector(".sq").getAttribute("aria-label"),
+  );
+  check("the side survives a reload", sideAfter.startsWith("h1"), sideAfter);
+
+  // Put it back, so the next scheme starts from the same place.
+  await page.evaluate(() => localStorage.clear());
+
   check("no page errors", pageErrors.length === 0, pageErrors.slice(0, 2).join(" | "));
 
   if (wantShots) {
@@ -909,6 +1107,10 @@ await phone.close();
  * did hide here once.
  */
 console.log("\n[hydration, dev server]");
+// `next dev` writes to the same `.next` directory `next start` is serving out of, so the
+// two cannot run together. Everything above is done with the production server.
+stopServers();
+await new Promise((r) => setTimeout(r, 1200));
 const devPort = port + 1;
 const devBase = `http://localhost:${devPort}`;
 startServer(["next", "dev", "-p", String(devPort)]);

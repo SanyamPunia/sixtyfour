@@ -774,16 +774,14 @@ game does not replay anything, since the count falls rather than rises.
 so the perceived gap between the human's piece landing and the bot's starting was about
 190ms, which read as an interruption rather than a reply. It is now a beat over a second.
 
-### Asset provenance, unresolved
+### Asset provenance
 
 `public/move.mp3` came from a file in the user's Downloads named after a stock library and
 an asset id. It was renamed on the way in, so nothing in this repository identifies its
 source, which satisfies rule 0.
 
-**Rule 0 is not a licence, though.** This repository is public and the clip's licence is
-unverified. Before publishing, either confirm the original permits redistribution, or
-replace it with a clip whose licence is known. This is the one file in the project that was
-not made here.
+**Resolved.** The author has confirmed the clips are free to use. The click sound is theirs
+from another project of their own.
 
 **Captures sound different, from either side.** `public/capture.mp3`, re-encoded the same
 way: 33KB down to 9KB. The hook picks the clip from whether the last move took something,
@@ -879,3 +877,45 @@ game element in the visual order.
 Both links open in a new tab with `rel="noopener noreferrer"`, and the icon-only one carries
 an accessible name. The X mark is one path filled with `currentColor`, so a single copy
 serves both themes rather than shipping a light and a dark file.
+
+
+**Mute, sides, and stored preferences.**
+
+Mute is checked inside `playSound`, not at each call site, so nothing can make a noise by
+forgetting to ask. Elements stay warm while muted, because unmuting mid-game should not
+then be late on its first sound.
+
+Board orientation lives in `columnOf`, `rowOf` and `squareAt` and nowhere else. Every
+component asks those three rather than doing the arithmetic, so the board, the pieces and
+the promotion stack cannot disagree about which way round it is. The light and dark squares
+need no special case: flipping inverts both the row and the column, and their sum keeps its
+parity, so a1 stays dark either way.
+
+Changing sides starts a new game, because there is no meaningful way to swap colours
+halfway through one. That makes it as consequential as new game, so it asks the same
+question when there is a game to lose.
+
+Difficulty, side and mute are applied on mount rather than read while building the initial
+state. The reducer's initialiser runs on the server too, where there is no `localStorage`,
+and branching on that is what produced the hydration bug earlier. One frame of the default
+lands inside the piece entrance animation, so nothing is visible. The theme is the
+exception and stays on the inline script, because a wrong theme for one frame is a full
+page colour flash.
+
+### Two checks that were passing without testing anything
+
+Both were written by me and both looked green.
+
+**"difficulty survives a reload" compared a default to itself.** The suite never changed
+the difficulty before reloading, so medium equalled medium and the check passed. It now
+changes it inside the check and asserts both that it changed and that it stuck.
+
+**"muting silences the controls" asserted one sound, not none.** The mute button's own
+click legitimately sounds, because it is still unmuted at the moment it is pressed. The
+count now starts after that press, so it measures the silence rather than the press.
+
+**Drag-to-promote needed its own phase.** Sharing a loop with the capture chase meant
+neither finished inside a sane turn budget, and the promotion check passed while reporting
+"no promotion reached", which is not a pass. It now runs on a fresh game against the easy
+bot, which leaves material alone so a pawn can walk the board, and reaches the last rank in
+about sixteen moves.
