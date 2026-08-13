@@ -7,6 +7,7 @@
 
 import { at, clonePosition, kingSquare, startPosition } from "../chess/board.ts";
 import { makeMove } from "../chess/make.ts";
+import { fromUci } from "../chess/notation.ts";
 import { gameStatus, isGameOver, isInCheck, legalMoves } from "../chess/rules.ts";
 import type {
   Color,
@@ -21,9 +22,19 @@ import { applyMoveToPieces, initialPieces, type PieceView } from "./piece-state.
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+/**
+ * Who is on the other side.
+ *
+ * This is the only thing the reducer knows about rooms, and it exists so that exactly one
+ * of the two opponent hooks is live at a time. Everything else about a room stays in
+ * `use-room`, which dispatches the same `play` action the bot does. A move is a move.
+ */
+export type Opponent = "bot" | "room";
+
 export interface GameState {
   position: Position;
   pieces: PieceView[];
+  opponent: Opponent;
   humanColor: Color;
   selected: Square | null;
   legalTargets: Move[];
@@ -55,16 +66,21 @@ export type GameAction =
   | { type: "beginThinking" }
   | { type: "setDifficulty"; difficulty: Difficulty }
   | { type: "newGame" }
-  | { type: "setSide"; color: Color };
+  | { type: "setSide"; color: Color }
+  | { type: "enterRoom"; color: Color; moves: string[] }
+  | { type: "syncRoom"; moves: string[] }
+  | { type: "leaveRoom" };
 
 export function createGame(
   difficulty: Difficulty = "medium",
   humanColor: Color = WHITE,
+  opponent: Opponent = "bot",
 ): GameState {
   const position = startPosition();
   return {
     position,
     pieces: initialPieces(position),
+    opponent,
     humanColor,
     selected: null,
     legalTargets: [],
@@ -110,6 +126,52 @@ function playMove(state: GameState, move: Move): GameState {
     status: gameStatus(position),
     history: [...state.history, move],
     castlingRookId,
+    thinking: false,
+    pendingPromotion: null,
+  };
+}
+
+/**
+ * Rebuilds a game from a move list that is known to be right.
+ *
+ * Used when the server and this browser have come to disagree, which happens after a
+ * reconnect or a refused move. Replaying from the start rather than patching means there is
+ * no partial-update path that could leave the board in a state neither side intended.
+ *
+ * The piece ids come out identical to the ids the same moves would have produced one at a
+ * time, because both start from the same scan of the same start position. So React keeps
+ * every node, and a correction that agrees with what is on screen is invisible while one
+ * that does not slides the affected pieces into place. A resync does not flash the board.
+ *
+ * A move that will not decode ends the replay. That can only mean a corrupt list, and
+ * stopping at the last coherent position beats rendering nonsense.
+ */
+function fromMoves(base: GameState, moves: readonly string[]): GameState {
+  const position = startPosition();
+  let pieces = initialPieces(position);
+  const history: Move[] = [];
+  let lastMove: { from: Square; to: Square } | null = null;
+
+  for (const uci of moves) {
+    const move = fromUci(position, uci);
+    if (move === null) break;
+    const mover = position.side;
+    makeMove(position, move);
+    pieces = applyMoveToPieces(pieces, move, mover);
+    history.push(move);
+    lastMove = { from: move.from, to: move.to };
+  }
+
+  return {
+    ...base,
+    position,
+    pieces,
+    selected: null,
+    legalTargets: [],
+    lastMove,
+    status: gameStatus(position),
+    history,
+    castlingRookId: null,
     thinking: false,
     pendingPromotion: null,
   };
@@ -199,6 +261,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, difficulty: action.difficulty };
 
     case "newGame":
+      // In a room, starting again is the other player's decision too, so it goes through
+      // the server as a rematch. Clearing the board here would only desync it.
+      if (state.opponent === "room") return state;
       // The piece ids come from scanning the start position, so they are the same ids the
       // board is already showing. React keeps those nodes, and every surviving piece
       // transitions home instead of popping there.
@@ -208,6 +273,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       };
 
     case "setSide":
+      // In a room your colour is your seat, and the seat was decided when you took it.
+      if (state.opponent === "room") return state;
       // Changing sides is starting again. There is no meaningful way to swap colours
       // halfway through a game.
       return state.humanColor === action.color
@@ -216,6 +283,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             ...createGame(state.difficulty, action.color),
             resetToken: state.resetToken + 1,
           };
+
+    case "enterRoom":
+      return {
+        ...fromMoves(createGame(state.difficulty, action.color, "room"), action.moves),
+        resetToken: state.resetToken + 1,
+      };
+
+    case "syncRoom":
+      // Ignored outside a room. A late message from a connection that has since been left
+      // must not reach in and rewrite a local game.
+      return state.opponent === "room" ? fromMoves(state, action.moves) : state;
+
+    case "leaveRoom":
+      return {
+        ...createGame(state.difficulty, state.humanColor, "bot"),
+        resetToken: state.resetToken + 1,
+      };
 
     default:
       return state;

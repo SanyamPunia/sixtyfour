@@ -43,7 +43,12 @@ export function useBot(state: GameState, dispatch: (action: GameAction) => void)
     };
   }, []);
 
-  const botToMove = !isGameOver(state.status) && state.position.side !== state.humanColor;
+  // In a room the other side of the board is a person, and the bot must not answer for
+  // them. This is the only line in the bot that knows rooms exist.
+  const botToMove =
+    state.opponent === "bot" &&
+    !isGameOver(state.status) &&
+    state.position.side !== state.humanColor;
 
   useEffect(() => {
     if (!botToMove) return;

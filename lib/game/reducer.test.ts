@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseFen, parseSquare } from "../chess/board.ts";
 import { gameStatus, isInCheck, legalMoves } from "../chess/rules.ts";
-import { WHITE } from "../chess/types.ts";
+import { BLACK, WHITE } from "../chess/types.ts";
 import { initialPieces } from "./piece-state.ts";
 import {
   createGame,
@@ -137,4 +137,93 @@ test("a lone king with nowhere to go is a stalemate, not a loss", () => {
   assert.equal(gameStatus(pos), "stalemate");
   assert.equal(legalMoves(pos).length, 0, "white has no move");
   assert.equal(isInCheck(pos, WHITE), false, "and is not in check, which is the whole point");
+});
+
+/**
+ * Room mode, which the reducer knows about only as a flag.
+ *
+ * The value of the flag is that exactly one opponent is live at a time, and that the two
+ * ways a game can restart cannot be reached locally while a second player is relying on
+ * the board staying where it is.
+ */
+
+function play(state: GameState, from: string, to: string): GameState {
+  const after = gameReducer(state, { type: "select", square: parseSquare(from) });
+  return gameReducer(after, { type: "select", square: parseSquare(to) });
+}
+
+test("entering a room takes the seat's colour and replays what has happened", () => {
+  const state = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: BLACK,
+    moves: ["e2e4", "e7e5", "g1f3"],
+  });
+
+  assert.equal(state.opponent, "room");
+  assert.equal(state.humanColor, BLACK);
+  assert.equal(state.history.length, 3);
+  assert.equal(state.position.side, BLACK, "it should be the joining player's move");
+  assert.deepEqual(state.lastMove, {
+    from: parseSquare("g1"),
+    to: parseSquare("f3"),
+  });
+});
+
+test("a sync that agrees with the board changes nothing a player would see", () => {
+  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: [] });
+  const moved = play(room, "e2", "e4");
+  const synced = gameReducer(moved, { type: "syncRoom", moves: ["e2e4"] });
+
+  assert.deepEqual(
+    synced.pieces.map((p) => `${p.id}@${p.square}`).sort(),
+    moved.pieces.map((p) => `${p.id}@${p.square}`).sort(),
+    "a confirming sync moved or renamed a piece",
+  );
+  assert.equal(synced.history.length, 1);
+});
+
+test("a sync rolls back a move the room never accepted", () => {
+  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: [] });
+  const optimistic = play(room, "e2", "e4");
+  assert.equal(optimistic.history.length, 1);
+
+  // The room says that move never happened.
+  const corrected = gameReducer(optimistic, { type: "syncRoom", moves: [] });
+  assert.deepEqual(corrected.history, []);
+  assert.equal(corrected.position.side, WHITE, "the turn did not come back");
+  assert.equal(corrected.lastMove, null);
+  // Piece identity survives the correction, so the pawn slides home rather than reappearing.
+  assert.equal(corrected.pieces.length, 32);
+  assert.deepEqual(
+    corrected.pieces.map((p) => p.id).sort(),
+    initialPieces(createGame().position)
+      .map((p) => p.id)
+      .sort(),
+  );
+});
+
+test("a sync is ignored outside a room", () => {
+  // A message from a connection that has already been left must not rewrite a local game.
+  const local = play(createGame(), "e2", "e4");
+  const after = gameReducer(local, { type: "syncRoom", moves: ["d2d4", "d7d5"] });
+  assert.equal(after, local, "a stale room message reached a bot game");
+});
+
+test("a room game cannot be restarted or re-sided from this browser alone", () => {
+  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: ["e2e4"] });
+  assert.equal(gameReducer(room, { type: "newGame" }), room, "new game cleared a shared board");
+  assert.equal(
+    gameReducer(room, { type: "setSide", color: BLACK }),
+    room,
+    "a player changed seats mid-game",
+  );
+});
+
+test("leaving a room returns to a fresh game against the bot", () => {
+  const room = gameReducer(createGame(), { type: "enterRoom", color: BLACK, moves: ["e2e4"] });
+  const left = gameReducer(room, { type: "leaveRoom" });
+  assert.equal(left.opponent, "bot");
+  assert.deepEqual(left.history, []);
+  assert.equal(left.humanColor, BLACK, "the side being played was thrown away");
+  assert.notEqual(left.resetToken, room.resetToken);
 });
