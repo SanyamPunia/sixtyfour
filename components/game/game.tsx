@@ -29,11 +29,17 @@ import { StatusBar } from "./status-bar.tsx";
 import { StatusRegion } from "./status-region.tsx";
 import { useBot } from "./use-bot.ts";
 import { useMoveSound } from "./use-move-sound.ts";
+import { useRoom } from "./use-room.ts";
 
 export function Game() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createGame());
   const [muted, setMutedState] = useState(false);
+  // Both hooks are always mounted, and `state.opponent` decides which one is live. A hook
+  // cannot be conditional, and a game that switches between the two would otherwise have
+  // to unmount and remount the board.
   useBot(state, dispatch);
+  const [room, roomControls] = useRoom(state, dispatch);
+  const inRoom = state.opponent === "room";
 
   /*
    * Stored choices are applied on mount rather than read while building the initial state.
@@ -95,6 +101,7 @@ export function Game() {
             thinking={state.thinking}
             result={resultLabel(state)}
             materialLead={materialLead}
+            waitingOn={inRoom ? room.opponent : null}
           />
           <Board
             position={state.position}
@@ -125,6 +132,9 @@ export function Game() {
             attention={isGameOver(state.status)}
             humanColor={state.humanColor}
             muted={muted}
+            inRoom={inRoom}
+            room={room}
+            roomControls={roomControls}
             onSide={changeSide}
             onToggleMute={toggleMute}
             onDifficulty={changeDifficulty}
