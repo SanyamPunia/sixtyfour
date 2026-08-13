@@ -7,16 +7,10 @@ interface StatusBarProps {
   yourTurn: boolean;
   thinking: boolean;
   whiteToMove: boolean;
-  /** Null while the game is live. */
-  outcome: "win" | "loss" | "draw" | null;
+  /** Null while the game is live. Already says which ending it was. */
+  result: string | null;
   materialLead: number;
 }
-
-const RESULT: Record<"win" | "loss" | "draw", string> = {
-  win: "you win",
-  loss: "you lose",
-  draw: "draw",
-};
 
 /**
  * The one line of state above the board: whose turn it is, and who is ahead.
@@ -27,12 +21,12 @@ export function StatusBar({
   yourTurn,
   thinking,
   whiteToMove,
-  outcome,
+  result,
   materialLead,
 }: StatusBarProps) {
   // A finished game replaces the running state rather than sitting beside it. The turn dot
   // and the material lead are both answers to "what now", and there is no now any more.
-  if (outcome !== null) {
+  if (result !== null) {
     return (
       <div className="flex h-5 items-center justify-center">
         <p
@@ -40,7 +34,7 @@ export function StatusBar({
           className="result-in text-sm font-medium lowercase"
           style={{ color: "var(--ink)" }}
         >
-          {RESULT[outcome]}
+          {result}
         </p>
       </div>
     );

@@ -242,6 +242,31 @@ export function isHumanTurn(state: GameState): boolean {
 }
 
 /**
+ * What to put on screen when a game ends, or null while it is live.
+ *
+ * A draw has four causes and they are not interchangeable. Showing "draw" for all of them
+ * leaves a player who has just stalemated a lone king with no idea what happened, which is
+ * the single most surprising way a won game ends.
+ */
+export function resultLabel(state: GameState): string | null {
+  const yourTurn = state.position.side === state.humanColor;
+  switch (state.status) {
+    case "checkmate":
+      return yourTurn ? "you lose" : "you win";
+    case "stalemate":
+      return "stalemate";
+    case "draw-fifty-move":
+      return "draw, fifty moves";
+    case "draw-repetition":
+      return "draw, repetition";
+    case "draw-insufficient":
+      return "draw, no mate possible";
+    default:
+      return null;
+  }
+}
+
+/**
  * The outcome, from the player's point of view, or null while the game is live.
  *
  * The side to move at checkmate is the side that got mated, which is why this reads the

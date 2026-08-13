@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseFen, parseSquare } from "../chess/board.ts";
+import { gameStatus, isInCheck, legalMoves } from "../chess/rules.ts";
+import { WHITE } from "../chess/types.ts";
 import { initialPieces } from "./piece-state.ts";
-import { createGame, type GameState, gameReducer, isHumanTurn, outcome } from "./reducer.ts";
+import {
+  createGame,
+  type GameState,
+  gameReducer,
+  isHumanTurn,
+  outcome,
+  resultLabel,
+} from "./reducer.ts";
 
 /**
  * The promotion flow and the outcome are reducer behaviour, and the reducer is pure.
@@ -101,4 +110,31 @@ test("the outcome reads from the side to move", () => {
   ] as const) {
     assert.equal(outcome({ ...live, status }), "draw", status);
   }
+});
+
+test("every ending says which ending it was", () => {
+  const live = gameAt(PROMOTION_READY);
+  assert.equal(resultLabel({ ...live, status: "playing" }), null);
+  assert.equal(resultLabel({ ...live, status: "check" }), null, "check is not an ending");
+
+  // A draw has four causes and a player cannot act on "draw" alone. Stalemating a lone
+  // king from a winning position is the one that most needs saying out loud.
+  assert.equal(resultLabel({ ...live, status: "stalemate" }), "stalemate");
+  assert.equal(resultLabel({ ...live, status: "draw-fifty-move" }), "draw, fifty moves");
+  assert.equal(resultLabel({ ...live, status: "draw-repetition" }), "draw, repetition");
+  assert.equal(resultLabel({ ...live, status: "draw-insufficient" }), "draw, no mate possible");
+
+  const weAreMated = gameAt("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+  assert.equal(resultLabel({ ...weAreMated, status: "checkmate" }), "you lose");
+  const weMated = gameAt("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
+  assert.equal(resultLabel({ ...weMated, status: "checkmate" }), "you win");
+});
+
+test("a lone king with nowhere to go is a stalemate, not a loss", () => {
+  // Black is a queen and a rook up, and has taken every square from the white king
+  // without checking it. This is the position the visible label has to explain.
+  const pos = parseFen("7k/8/8/8/8/8/5q2/7K w - - 0 1");
+  assert.equal(gameStatus(pos), "stalemate");
+  assert.equal(legalMoves(pos).length, 0, "white has no move");
+  assert.equal(isInCheck(pos, WHITE), false, "and is not in check, which is the whole point");
 });

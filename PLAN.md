@@ -998,3 +998,13 @@ spins one way and the incoming spins the other, and the pair reads as a glitch r
 as one continuous turn. Measured mid-swap: the outgoing icon passes its target at 113
 degrees and the incoming overshoots to 1.018 before settling, which is the pop easing doing
 the snap.
+
+
+**A draw now says which draw.** The line read "draw" for all four causes, so a player who
+had just stalemated a lone king from a winning position had no way to tell what happened.
+Stalemate is the one that most needs saying: you are not losing, you did not run out of
+material, you took every square from a king that was not in check.
+
+The four now read "stalemate", "draw, repetition", "draw, fifty moves" and "draw, no mate
+possible". The engine already knew which it was and the screen reader line already said so.
+Only the visible label was collapsing them.

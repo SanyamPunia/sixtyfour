@@ -11,7 +11,7 @@ import {
   isGameOver,
   isHumanTurn,
   matedKingSquare,
-  outcome,
+  resultLabel,
 } from "@/lib/game/reducer.ts";
 import {
   readDifficulty,
@@ -92,7 +92,7 @@ export function Game() {
             yourTurn={state.position.side === state.humanColor}
             whiteToMove={state.position.side === WHITE}
             thinking={state.thinking}
-            outcome={outcome(state)}
+            result={resultLabel(state)}
             materialLead={materialLead}
           />
           <Board
