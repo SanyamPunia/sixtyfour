@@ -5,7 +5,7 @@ joins, and both see whether the other is actually there.
 
 This is the plan of record for the feature. `PLAN.md` covers what is already built.
 
-Nothing here is implemented yet. Section 10 is the order to build it in.
+Nothing here is implemented yet. Section 12 is the order to build it in.
 
 ---
 
@@ -20,7 +20,7 @@ Three things follow, and they are the real cost of the feature:
   open ended.
 - **It can fail in ways nothing here currently can.** A network drops, a room expires, two
   tabs disagree, a laptop sleeps mid game. Every one of those needs a visible state.
-- **It adds UI to a product whose whole point is not having any.** Section 8 is the budget.
+- **It adds UI to a product whose whole point is not having any.** Section 9 is the budget.
 
 ---
 
@@ -161,7 +161,40 @@ characters and creation needs no account.
 
 ---
 
-## 4. Authority
+## 4. Where the moves come from
+
+This is the largest risk in the feature, and it is in the existing code rather than the new
+code.
+
+The reducer today assumes one shape: the human plays one colour, the bot plays the other,
+and `use-bot.ts` fires whenever `position.side !== humanColor`. Room mode has to slot into
+that without turning `reducer.ts` into two products sharing a file.
+
+**The reducer does not learn about rooms.** It already has the only action that matters:
+
+```ts
+{ type: "play"; move: Move }
+```
+
+`use-bot.ts` dispatches that today. `use-room.ts` dispatches exactly the same thing when a
+move arrives from the other player. The reducer cannot tell them apart and does not need to.
+
+**One flag decides which one is running.** `GameState` gains `opponent: "bot" | "room"`, and:
+
+- `use-bot.ts` returns early unless `opponent === "bot"`. One line, at the top of the effect.
+- The difficulty and side controls hide when `opponent === "room"`, per section 9.
+- `isHumanTurn` gains one more condition, the same way it already handles `thinking` and
+  `pendingPromotion`.
+
+**What the local move path does change** is that a human move must now be sent as well as
+applied. That belongs in the hook, not the reducer, which stays pure.
+
+The mistake to avoid is a second reducer, or a `mode` check sprinkled through the existing
+one. Every branch added to `reducer.ts` is a branch the 63 existing tests do not cover.
+
+---
+
+## 5. Authority
 
 **The server validates every move.** Not the clients.
 
@@ -174,9 +207,38 @@ A move arrives as coordinates. The server loads the room, checks the sender owns
 move, generates the legal moves for that position, and rejects anything not in the list. A
 client cannot put an illegal position on the board even if it tries.
 
+**The server also decides when the game is over.** It has `gameStatus` from the same engine,
+so it computes checkmate, stalemate and every draw after applying a move, and sends the
+result with the position. Two clients cannot disagree about whether a game ended, and a
+client that reconnects after the final move is told immediately.
+
+**Joining is atomic, like the room cap.** Read, check the seat is free, write is three steps,
+and two people opening the same link at the same moment will both pass the check. Claim the
+seat with a compare and set on `version` and let the loser get "room is full". Without it the
+common case, sending a link to two people at once, silently seats one player twice.
+
+### Every message
+
+`protocol.ts` is the whole surface between the two halves, so it is short on purpose.
+
+| Direction | Message | Carries |
+|---|---|---|
+| client to server | `join` | player id, and the key from the URL |
+| client to server | `move` | from, to, promotion, and the `version` it was played against |
+| client to server | `rematch` | offer or accept |
+| client to server | `ping` | nothing. Presence only |
+| server to client | `state` | fen, version, history, status, both seats |
+| server to client | `moved` | the move, the new fen, the new version, the status |
+| server to client | `presence` | which seat, and here, away or gone |
+| server to client | `error` | a code the dialog can render, never a raw message |
+
+Every server message carries `version`. A client that is behind asks for `state` rather than
+trying to catch up move by move, which is why the room keeps the fen and not just a move
+list.
+
 ---
 
-## 5. Shape
+## 6. Shape
 
 Two deployables, because they have nothing in common. The game is a static page. The room
 server is a long lived process holding sockets. Keeping them apart is also what keeps the
@@ -239,7 +301,7 @@ either says "you are current" or sends the position.
 
 ---
 
-## 6. The key
+## 7. The key
 
 Six characters from a 31 character alphabet: digits and letters minus `0`, `O`, `1`, `I` and
 `L`, which are the pairs people confuse reading a key aloud or typing it from a screenshot.
@@ -254,7 +316,7 @@ Two ways in, landing in the same place:
 
 ---
 
-## 7. Presence, which is the actual feature
+## 8. Presence, which is the actual feature
 
 "Is the other person there" is what was asked for, and it is the part most easily done
 badly. Two signals, because neither is sufficient alone.
@@ -284,9 +346,15 @@ Shown as a second dot beside the turn dot, in the language the board already spe
 when here, hollow when away, faded when gone, with a tooltip naming it. No banner, no toast,
 no new vocabulary.
 
+**Publish changes, do not poll `lastSeen`.** The process holding a player's socket already
+knows they are alive. It only needs Redis when the other player is somewhere else, so a
+heartbeat costs nothing until presence actually changes, and a change is pushed rather than
+discovered on someone's next read. On the estimate in section 3 that is most of the per game
+command count removed, and it makes the indicator faster at the same time.
+
 ---
 
-## 8. UI budget
+## 9. UI budget
 
 The product has five controls and no text during a game. Rooms must not double that.
 
@@ -307,7 +375,7 @@ all work unchanged, because none of them care where a move came from.
 
 ---
 
-## 9. What can go wrong, and what it looks like
+## 10. What can go wrong, and what it looks like
 
 Each needs a state, and none can be silent.
 
@@ -335,7 +403,51 @@ rather than jump.
 
 ---
 
-## 10. Order of work
+## 11. Running it, and keeping the gate honest
+
+### Two processes locally
+
+`pnpm dev` becomes two things. The game on 3000, the room server on 3001, and a
+`pnpm dev:all` that runs both.
+
+**Develop against a local Redis, not the Upstash instance.** `docker run -p 6379:6379 redis`
+speaks the same protocol, so `ioredis` cannot tell the difference, and it means no network
+round trip on every keystroke and no shared state between two people working at once. The
+provisioned instance is for deployed environments.
+
+### Secrets
+
+`REDIS_URL` is a credential and lives only on the server. It must never appear in anything
+the browser downloads, which in Next means it must never be prefixed `NEXT_PUBLIC_`.
+
+The only public variable this feature adds is `NEXT_PUBLIC_ROOM_SERVER`, which is a URL and
+not a secret. `.env*` is already gitignored, and the pre-commit guard's denylist should gain
+a pattern for `rediss://` so a connection string cannot be committed by accident. That is
+the same reasoning as rule 0: a rule nobody can forget beats a rule everybody must remember.
+
+### The gate
+
+`pnpm check` is lint, typecheck, test, build. Adding `server/` means:
+
+- Biome and TypeScript must cover it. It is not inside the Next app, so it needs to be in
+  `tsconfig` includes and the Biome file list, or it silently goes unchecked.
+- `lib/room/*.test.ts` runs under the existing `node --test` glob, which is why the service
+  lives in `lib/`.
+- The server needs its own build step, or a runtime that reads TypeScript directly.
+
+### The verification harness
+
+`scripts/verify.mjs` starts one server today. Rooms need a second, plus a local Redis, and
+the harness has already been bitten once by a server outliving its run: `npx` spawns a child
+that holds the port, and killing the parent leaves it. Both servers must start detached and
+be killed by process group, the way the existing one now is.
+
+The port guard needs the same treatment. Refusing to run when something already answers on
+the room server's port is what stops a stale process from making a green run meaningless.
+
+---
+
+## 12. Order of work
 
 Each step ends somewhere testable.
 
@@ -362,23 +474,26 @@ limits on create and join. No framework and no platform API, so it runs with `no
 *Exit: two `wscat` sessions on one room see each other's moves, against a server started
 with `node`, not a deploy.*
 
-**4. `use-room.ts` and the transport.** Connect, backoff, reconnect, resume from `version`,
-optimistic local moves, reconcile on rejection, identity in `localStorage`. This is where
-the real difficulty is, not on the server.
+**4. `use-room.ts` and the transport, plus the one reducer change.** Connect, backoff,
+reconnect, resume from `version`, optimistic local moves, reconcile on rejection, identity in
+`localStorage`. The reducer gains `opponent` and `use-bot.ts` gains its early return, per
+section 4, and nothing else in the existing state machine moves. This is where the real
+difficulty is, not on the server.
 *Exit: two browser tabs play a full game, including across a forced reconnect.*
 
 **5. The polling fallback.** Same interface, worse latency, used when the socket will not
 establish.
 *Exit: the game is playable with WebSocket upgrades blocked.*
 
-**6. The dialog and the presence dot.** Section 8's budget is the constraint.
+**6. The dialog and the presence dot.** Section 9's budget is the constraint.
 *Exit: the flow works from a shared link and from a typed key.*
 
-**7. Two-page browser verification.** Section 11.
+**7. Two-page browser verification.** Section 13, plus the harness work in section 11: a
+second server started detached, its own port guard, and a local Redis.
 
 ---
 
-## 11. How it gets verified
+## 13. How it gets verified
 
 The existing suite drives one page. Rooms need two, and the interesting failures are all
 about what the second page sees. Puppeteer drives both directly.
@@ -392,10 +507,14 @@ about what the second page sees. Puppeteer drives both directly.
 - **A forced reconnect is invisible.** Drop B's socket, let it reconnect, and assert A's
   presence dot never left "here". This is the check that protects the grace window, and the
   one most likely to regress.
-- Closing B moves A's dot to away, then to gone, on section 7's timings.
+- Closing B moves A's dot to away, then to gone, on section 8's timings.
 - Reopening B rejoins as the same player with the position intact.
 - Backgrounding a tab does not report that player as gone.
 - A sixth room is refused with a visible message.
+- Two clients joining the same empty room at the same instant produce one player and one
+  "room is full", never two players in the same seat.
+- With `NEXT_PUBLIC_ROOM_SERVER` unset the room control does not render and the bot game is
+  untouched, which is the state every existing check already runs in.
 - With WebSocket upgrades blocked, the game still plays over the fallback.
 
 The reconnect and backgrounding checks are the ones a manual test never catches, because
@@ -403,7 +522,7 @@ both need the patience to sit and watch nothing happen for the right length of t
 
 ---
 
-## 12. Open questions
+## 14. Open questions
 
 1. **Who picks sides?** Simplest is the creator choosing white, black or random when making
    the room. Deciding when the second player joins needs another round trip and another
@@ -417,10 +536,14 @@ both need the patience to sit and watch nothing happen for the right length of t
    about disconnects, and it would make the server the timekeeper.
 5. **Spectators?** Not proposed. It turns a room from two slots into an audience, and it
    interacts badly with a cap of five.
+6. **What happens when someone never comes back?** Presence says "gone" and the board sits
+   there until the room expires. A win by abandonment needs a timer and a rule about how
+   long is long enough, and getting that wrong hands someone a loss for a train tunnel.
+   Doing nothing is the safe default and may well be the right one.
 
 ---
 
-## 13. Out of scope
+## 15. Out of scope
 
 Accounts, matchmaking against strangers, ratings, chat, saved history, tournaments. Each one
 turns a small game you send to a friend into a service that needs moderation.
