@@ -734,6 +734,17 @@ for (const scheme of ["light", "dark"]) {
     const preference = botCapture === null ? "quiet" : "capture";
     const played = await page.evaluate(async (want) => {
       const frame = () => new Promise((r) => requestAnimationFrame(r));
+
+      // The loop pushes pawns, so it reaches the last rank. The picker's scrim covers the
+      // board until it is answered, and every later click would land on it.
+      const picker = document.querySelector(".promo-choice");
+      if (picker !== null) {
+        picker.click();
+        await frame();
+        return "quiet";
+      }
+      // A finished game is inert, and no further move is coming.
+      if (document.querySelector('.board-surface[data-over="true"]') !== null) return "over";
       const ownSquares = () =>
         [...document.querySelectorAll(".sq")].filter((n) =>
           n.getAttribute("aria-label").includes("your "),
@@ -759,7 +770,7 @@ for (const scheme of ["light", "dark"]) {
       }
       return "none";
     }, preference);
-    if (played === "none") break;
+    if (played === "none" || played === "over") break;
 
     const afterHuman = await countPieces();
     if (afterHuman.opponent < before.opponent) {

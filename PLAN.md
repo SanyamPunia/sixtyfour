@@ -839,3 +839,34 @@ running as an equaliser: one says whose turn it is, the other says work is happe
 installed before the first commit, so every one of them passed the denylist on content,
 paths, and message. The hooks live in `.git/hooks`, which git never pushes, and the audit
 across every blob and every commit message in the history came back clean.
+
+
+**Promotion asks instead of auto-queening.** A pawn reaching the last rank holds its move
+and offers the four pieces, stacked on the square it is arriving on so the choice appears
+where the player is already looking. The stack runs toward the middle of the board and
+flips when that would take it off the edge. A scrim behind it takes a click as a cancel,
+because the move is not played until one of the four is chosen.
+
+Nothing dispatches on the pawn's arrival, which is what makes cancelling possible: the
+move exists only as four options held in state.
+
+**A finished game says so.** The status line above the board replaces the turn dot and the
+material lead with the result, the board drops to 40% saturation and 72% opacity so the
+final position stays readable, the mated king tips over, and the new game button pulses
+because nothing on the board can act any more.
+
+**`createGame` was reporting every position as playing.** It hardcoded the status instead
+of reading it, which normal play masks because `playMove` recomputes on every move. Any
+position handed in was reported as live even when it was already decided, and the bot then
+searched a position with no legal moves and never replied. Found by seeding a mated
+position to screenshot the new state.
+
+**The reducer and piece identity moved to `lib/game/`.** Both are pure and neither imports
+React, so they belonged there by the project's own rule. It also makes them reachable by
+`node --test`, which the promotion flow needed: reaching a promotion through the browser
+means playing a real game against a bot with a deliberate think delay, and what would be
+exercised is still this code.
+
+**One more harness bug.** The capture loop pushes pawns, so it now reaches the last rank,
+and the picker's scrim swallowed every later click. It answers the picker and takes the
+queen.
