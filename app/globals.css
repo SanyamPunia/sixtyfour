@@ -43,16 +43,13 @@
    * opponent rendered near-white whichever side they were actually playing, so if you were
    * White your own pieces were the grey ones. Nobody can read a board that does that.
    *
-   * A solid silhouette in a light fill disappears on a light square, so each side carries a
-   * thin edge in the opposite direction. That is what a real piece set does, and it is what
-   * lets both sides sit on both square tones.
+   * Solid fills, no outline. A literal white and a literal black cannot both sit on the
+   * same two square tones, so each theme uses the pair that does: White is always the
+   * lighter of the two and Black the darker, and both are clear of the board underneath.
+   * That relationship is what makes the board readable, not the absolute values.
    */
-  --piece-white: #ffffff;
-  /* Carries the whole shape in this theme: a white fill on a near-white square is
-     invisible on its own, so the edge is darker than a rim light would need to be. */
-  --piece-white-edge: #97979f;
-  --piece-black: #26262a;
-  --piece-black-edge: #0d0d0f;
+  --piece-white: #9a9a9f;
+  --piece-black: #232326;
 
   --ink: #2a2a2c;
   --ink-soft: #8a8a90;
@@ -109,10 +106,8 @@
   --sq-check: #5f2320;
   --focus-ring: #6b6355;
 
-  --piece-white: #f4f4f7;
-  --piece-white-edge: #a8a8b0;
-  --piece-black: #101014;
-  --piece-black-edge: #55555f;
+  --piece-white: #e9e9ed;
+  --piece-black: #85858e;
 
   --ink: #e6e6ea;
   --ink-soft: #7e7e88;

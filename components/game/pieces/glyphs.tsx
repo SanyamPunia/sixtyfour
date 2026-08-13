@@ -67,24 +67,12 @@ export interface PieceGlyphProps {
   inherit?: boolean;
 }
 
-/**
- * The edge is drawn under the fill with `paint-order`, so a stroke of any width only ever
- * grows outward. Painted the default way it eats half its width into the silhouette and
- * thins every piece.
- */
 export function PieceGlyph({ type, white, inherit = false }: PieceGlyphProps) {
-  const paint = inherit
-    ? { fill: "currentColor", stroke: "none" }
-    : {
-        fill: white ? "var(--piece-white)" : "var(--piece-black)",
-        stroke: white ? "var(--piece-white-edge)" : "var(--piece-black-edge)",
-        strokeWidth: 0.9,
-        paintOrder: "stroke" as const,
-      };
+  const fill = inherit ? "currentColor" : white ? "var(--piece-white)" : "var(--piece-black)";
 
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true" className="pointer-events-none size-full">
-      <g style={paint}>
+      <g style={{ fill }}>
         <path d={BODY} />
         <path d={MARKS[type]} />
       </g>

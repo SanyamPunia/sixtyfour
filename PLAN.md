@@ -961,11 +961,16 @@ directly, and both were reported:
 **Fill now follows the chess colour in both themes.** White renders light and Black renders
 dark, always. `--piece-own` and `--piece-opponent` are gone.
 
-A solid silhouette in a light fill vanishes on a light square, so each side carries a thin
-edge in the opposite direction, painted under the fill with `paint-order: stroke` so the
-stroke only ever grows outward instead of eating half its width off the shape. In the light
-theme that edge is doing most of the work and is deliberately darker than a rim light would
-need to be, because a white fill on a near-white square has nothing else to define it.
+Solid fills, no outline. The first attempt at this used a literal white and a literal
+black with a thin contrasting edge on each, the way a real piece set does. It was wrong for
+this board: at these sizes the edge became the whole shape and the white pieces read as
+hollow outlines rather than pieces.
+
+A literal white and a literal black cannot both sit on the same two square tones, so each
+theme uses the pair that can. White is always the lighter of the two and Black the darker,
+and both are clear of the board underneath. That relationship is what makes the board
+readable, not the absolute values, and it is what the original palette already had. The
+defect was only ever the assignment.
 
 **The turn dot names the side to move**, in that side's own fill, so it answers "whose turn"
 and "which side is that" at once. It also settles the question that prompted this: White

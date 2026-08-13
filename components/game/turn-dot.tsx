@@ -29,9 +29,6 @@ export function TurnDot({ yourTurn, thinking, over, whiteToMove }: TurnDotProps)
       className={cn("turn-dot block size-2 shrink-0 rounded-full")}
       style={{
         background: whiteToMove ? "var(--piece-white)" : "var(--piece-black)",
-        // A ring, because a white dot on a light surface and a black one on a dark surface
-        // both need an edge for the same reason the pieces do.
-        boxShadow: `0 0 0 1px ${whiteToMove ? "var(--piece-white-edge)" : "var(--piece-black-edge)"}`,
         opacity: over ? 0.25 : thinking ? 0.45 : 1,
       }}
     />
