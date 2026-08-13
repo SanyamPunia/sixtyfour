@@ -803,6 +803,48 @@ for (const scheme of ["light", "dark"]) {
     botCapture ?? "no bot capture occurred",
   );
 
+  // The credit: correct targets, safe rel, and clear of everything it sits beside.
+  const credit = await page.evaluate(() => {
+    const footer = document.querySelector("footer");
+    if (footer === null) return null;
+    const links = [...footer.querySelectorAll("a")].map((a) => ({
+      href: a.href,
+      target: a.target,
+      rel: a.rel,
+      label: a.getAttribute("aria-label") ?? a.textContent.trim(),
+    }));
+    const box = footer.getBoundingClientRect();
+    const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+    const controls = document
+      .querySelector("footer ~ *, .board-surface")
+      ?.getBoundingClientRect();
+    void controls;
+    const overlaps = (a, b) =>
+      a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    return {
+      links,
+      insideViewport: box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+      overlapsBoard: overlaps(box, board),
+    };
+  });
+  check("the credit is present", credit !== null);
+  if (credit !== null) {
+    check(
+      "it points at the site and the profile",
+      credit.links.map((l) => l.href).join(" ") ===
+        "https://sanyam.sh/ https://x.com/sanyampunia",
+      credit.links.map((l) => l.href).join(" "),
+    );
+    check(
+      "external links are safe and labelled",
+      credit.links.every((l) => l.target === "_blank" && l.rel.includes("noreferrer")) &&
+        credit.links.some((l) => l.label === "Sanyam on X"),
+      credit.links.map((l) => `${l.label}:${l.rel}`).join(" | "),
+    );
+    check("it stays inside the viewport", credit.insideViewport);
+    check("it does not sit on the board", credit.overlapsBoard === false);
+  }
+
   check("no page errors", pageErrors.length === 0, pageErrors.slice(0, 2).join(" | "));
 
   if (wantShots) {
@@ -837,6 +879,24 @@ check(
   `${small.bottom} of ${small.viewport}`,
 );
 check("no horizontal scroll", small.overflowX === 0);
+const phoneCredit = await phone.evaluate(() => {
+  const footer = document.querySelector("footer");
+  const box = footer.getBoundingClientRect();
+  const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+  const overlaps =
+    box.left < board.right &&
+    box.right > board.left &&
+    box.top < board.bottom &&
+    box.bottom > board.top;
+  return {
+    overlaps,
+    inside: box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+  };
+});
+check(
+  "the credit fits a phone without covering the board",
+  !phoneCredit.overlaps && phoneCredit.inside,
+);
 if (wantShots) await phone.screenshot({ path: `${OUT}/board-phone.png` });
 await phone.close();
 

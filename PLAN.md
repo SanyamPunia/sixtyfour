@@ -870,3 +870,12 @@ exercised is still this code.
 **One more harness bug.** The capture loop pushes pawns, so it now reaches the last rank,
 and the picker's scrim swallowed every later click. It answers the picker and takes the
 queen.
+
+
+**A byline, bottom right.** Pinned rather than placed in the column, so it never competes
+with the board for the centre, and held in `--ink-soft` until hovered so it sits below every
+game element in the visual order.
+
+Both links open in a new tab with `rel="noopener noreferrer"`, and the icon-only one carries
+an accessible name. The X mark is one path filled with `currentColor`, so a single copy
+serves both themes rather than shipping a light and a dark file.

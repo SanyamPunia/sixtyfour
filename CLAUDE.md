@@ -112,6 +112,7 @@ components/
     pieces/             one SVG component per piece type
   ui/                   shadcn primitives
   smooth-corners.tsx    measures the board, then writes the squircle clip path
+  site-credit.tsx       the byline, pinned bottom right
 lib/
   sound.ts              every clip and its volume, in one place. No React
   chess/                pure engine. No React
