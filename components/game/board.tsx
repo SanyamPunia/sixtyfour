@@ -14,6 +14,7 @@ import type {
 } from "@/lib/chess/types.ts";
 import { EMPTY, WHITE } from "@/lib/chess/types.ts";
 import { type PieceView, squareAt } from "@/lib/game/piece-state.ts";
+import { Confetti } from "./confetti.tsx";
 import { Piece } from "./piece.tsx";
 import { PromotionPicker } from "./promotion-picker.tsx";
 import { Square, type SquareState } from "./square.tsx";
@@ -36,6 +37,8 @@ interface BoardProps {
   resetToken: number;
   pendingPromotion: { to: SquareIndex } | null;
   over: boolean;
+  /** Only on a win. A loss or a draw gets nothing. */
+  celebrate: boolean;
   onPromote: (piece: PromotionType) => void;
   onCancelPromotion: () => void;
   onGrab: (square: SquareIndex) => void;
@@ -73,6 +76,7 @@ export function Board({
   resetToken,
   pendingPromotion,
   over,
+  celebrate,
   onPromote,
   onCancelPromotion,
   onGrab,
@@ -256,6 +260,7 @@ export function Board({
           />
         ))}
       </div>
+      {celebrate && <Confetti />}
       {pendingPromotion !== null && (
         <PromotionPicker
           square={pendingPromotion.to}

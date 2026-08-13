@@ -1008,3 +1008,23 @@ material, you took every square from a king that was not in check.
 The four now read "stalemate", "draw, repetition", "draw, fifty moves" and "draw, no mate
 possible". The engine already knew which it was and the screen reader line already said so.
 Only the visible label was collapsing them.
+
+
+**Winning throws confetti.** No library and no canvas: each piece is one element carrying
+its own angle, distance, spin and delay as custom properties, and a single keyframe reads
+them, which is the mechanism the hint dots already use for their stagger.
+
+The layout is computed once at module scope from a fixed seed rather than randomised per
+render. A burst does not need real randomness to look scattered, and `Math.random()` in a
+render is exactly the hydration mismatch this project has already been bitten by once.
+
+The colours are light rather than saturated, because they have to sit on a near-white board
+and a near-black one. Primaries go muddy on the light theme and glare on the dark.
+
+**The dim moved onto the board's children.** `filter` applies to every descendant, so
+dimming the board wrapper was desaturating the confetti along with the position it was
+celebrating. Only visible by rendering it: the pieces were there and moving, and looked
+washed out for a reason that had nothing to do with their own colours.
+
+It fires on a win only. A loss or a draw gets nothing, and a check asserts a game in
+progress is not throwing confetti.

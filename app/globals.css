@@ -254,7 +254,14 @@ body {
  * A finished game. The board steps back rather than being covered: the final position is
  * the most interesting thing on screen and should stay readable.
  */
-.board-surface[data-over="true"] {
+/*
+ * The dim lands on the board's children, not the board itself.
+ *
+ * `filter` applies to every descendant, so dimming the wrapper desaturated the winning
+ * confetti along with the position it was celebrating. Excluding it here keeps the burst at
+ * full colour over a board that has stepped back.
+ */
+.board-surface[data-over="true"] > *:not(.confetti) {
   filter: saturate(0.4) opacity(0.72);
   transition: filter var(--dur-event) var(--ease-soft);
 }
@@ -317,6 +324,43 @@ body {
 .promo-choice:hover {
   background: var(--board-dark);
   scale: 1.04;
+}
+
+/*
+ * Winning burst. Each piece reads its own angle, distance, spin and delay from custom
+ * properties, so one keyframe serves all of them.
+ */
+.confetti > i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  opacity: 0;
+  animation: confetti 1150ms cubic-bezier(0.18, 0.9, 0.32, 1) var(--delay, 0ms) forwards;
+}
+
+@keyframes confetti {
+  0% {
+    opacity: 0;
+    scale: 0.3;
+    translate: 0 0;
+  }
+  12% {
+    opacity: 1;
+    scale: 1;
+  }
+  /* The burst peaks, then everything drifts down, which is what sells it as thrown
+     rather than as a ring expanding. */
+  60% {
+    opacity: 1;
+    translate: var(--dx) var(--dy);
+  }
+  100% {
+    opacity: 0;
+    scale: 0.85;
+    translate: var(--dx) calc(var(--dy) + var(--fall));
+    rotate: var(--spin);
+  }
 }
 
 /* The turn dot breathes while it is your move, and goes still when it is not. */
@@ -646,6 +690,7 @@ body {
   .digit-roll,
   .turn-dot,
   .swap-icons > *,
+  .confetti > i,
   .result-in,
   [data-attention="true"],
   .tooltip-content,

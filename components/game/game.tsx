@@ -11,6 +11,7 @@ import {
   isGameOver,
   isHumanTurn,
   matedKingSquare,
+  outcome,
   resultLabel,
 } from "@/lib/game/reducer.ts";
 import {
@@ -111,6 +112,7 @@ export function Game() {
             resetToken={state.resetToken}
             pendingPromotion={state.pendingPromotion}
             over={isGameOver(state.status)}
+            celebrate={outcome(state) === "win"}
             onPromote={(piece) => dispatch({ type: "promote", piece })}
             onCancelPromotion={() => dispatch({ type: "cancelPromotion" })}
             onGrab={(square) => dispatch({ type: "grab", square })}

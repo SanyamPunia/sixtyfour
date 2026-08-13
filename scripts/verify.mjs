@@ -175,6 +175,7 @@ for (const scheme of ["light", "dark"]) {
       squares: document.querySelectorAll(".sq").length,
       docScrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       rootTheme: document.documentElement.dataset.theme,
+      confetti: document.querySelectorAll(".confetti > i").length,
     };
   });
 
@@ -188,6 +189,8 @@ for (const scheme of ["light", "dark"]) {
     info.squares === 64 && info.pieces === 32,
     `${info.squares}/${info.pieces}`,
   );
+  // The burst is for winning. A game in progress must not be throwing confetti.
+  check("a live game is not celebrating", info.confetti === 0, `${info.confetti} pieces`);
   check("board is square and sized", info.board > 300, `${info.board}px`);
   check(
     // Re-baselined for the simplified set, whose marks sit lower in the box than the
