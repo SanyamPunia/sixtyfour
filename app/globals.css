@@ -238,6 +238,75 @@ body {
   cursor: grabbing;
 }
 
+/*
+ * A finished game. The board steps back rather than being covered: the final position is
+ * the most interesting thing on screen and should stay readable.
+ */
+.board-surface[data-over="true"] {
+  filter: saturate(0.4) opacity(0.72);
+  transition: filter var(--dur-event) var(--ease-soft);
+}
+
+.result-in {
+  animation: result-in var(--dur-settle) var(--ease-settle);
+}
+
+@keyframes result-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+/* Nothing on the board can act once it is over, so the one control that can says so. */
+[data-attention="true"] {
+  animation: attention 2.4s ease-in-out infinite;
+}
+
+@keyframes attention {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--ink-soft) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--ink-soft) 0%, transparent);
+  }
+}
+
+/*
+ * The promotion choices, stacked on the square the pawn is arriving on. The stack carries
+ * a shadow so it reads as sitting above the board rather than as four more squares that
+ * happen to be lighter.
+ */
+.promo-stack {
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.16),
+    0 8px 20px rgb(0 0 0 / 0.22);
+}
+
+.promo-choice {
+  background: var(--surface);
+  transition:
+    background var(--dur-quick) var(--ease-soft),
+    scale var(--dur-quick) var(--ease-pop);
+}
+
+.promo-choice:first-child {
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+}
+
+.promo-choice:last-child {
+  border-end-start-radius: 8px;
+  border-end-end-radius: 8px;
+}
+
+.promo-choice:hover {
+  background: var(--board-dark);
+  scale: 1.04;
+}
+
 /* The turn dot breathes while it is your move, and goes still when it is not. */
 .turn-dot {
   transition:
@@ -521,6 +590,8 @@ body {
   .bar-equalise,
   .digit-roll,
   .turn-dot,
+  .result-in,
+  [data-attention="true"],
   .tooltip-content,
   .dialog-overlay,
   .dialog-content {
