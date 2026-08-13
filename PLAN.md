@@ -1028,3 +1028,11 @@ washed out for a reason that had nothing to do with their own colours.
 
 It fires on a win only. A loss or a draw gets nothing, and a check asserts a game in
 progress is not throwing confetti.
+
+
+---
+
+## 16. Next
+
+`MULTIPLAYER.md` plans rooms. It is the first feature that needs a backend, the first that
+costs money to run, and the first that can fail in ways nothing here currently can.

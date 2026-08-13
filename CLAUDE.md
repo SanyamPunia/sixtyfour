@@ -54,6 +54,15 @@ What this means in practice:
 If you are unsure whether a sentence leaks, delete the sentence. Nothing in this project is
 worth a traceable mention.
 
+## Planned work
+
+`MULTIPLAYER.md` is the plan for rooms: play a friend over a shared link or a typed key,
+with a truthful indication of whether they are actually there. None of it is built.
+
+It is the first feature that needs a backend and the first that costs money to run, so read
+its sections 1 and 2 before starting: the transport choice and the reason for it are the
+decisions everything else hangs off.
+
 ## Commands
 
 ```bash
