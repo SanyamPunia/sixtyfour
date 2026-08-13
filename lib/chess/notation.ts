@@ -5,11 +5,22 @@
  * actually produces and nothing more.
  */
 
-import { algebraic, at, fileOf, rankOf, typeOf } from "./board.ts";
+import { algebraic, at, fileOf, parseSquare, rankOf, typeOf } from "./board.ts";
 import { makeMove, unmakeMove } from "./make.ts";
 import { isInCheck, legalMoves } from "./rules.ts";
-import type { Move, Position } from "./types.ts";
-import { EMPTY, FLAG_CASTLE, FLAG_EN_PASSANT, KING, PAWN } from "./types.ts";
+import type { Move, Position, PromotionType } from "./types.ts";
+import {
+  BISHOP,
+  EMPTY,
+  FLAG_CASTLE,
+  FLAG_EN_PASSANT,
+  KING,
+  KNIGHT,
+  NO_SQUARE,
+  PAWN,
+  QUEEN,
+  ROOK,
+} from "./types.ts";
 
 const TYPE_LETTER = ["", "", "N", "B", "R", "Q", "K"];
 
@@ -75,4 +86,56 @@ export function describeSquare(pos: Position, square: number, humanColor: number
   if (piece === EMPTY) return `${name}, empty`;
   const owner = Math.sign(piece) === humanColor ? "your" : "opponent";
   return `${name}, ${owner} ${SPOKEN_TYPE[typeOf(piece)]}`;
+}
+
+const PROMO_LETTER: Record<number, string> = {
+  [KNIGHT]: "n",
+  [BISHOP]: "b",
+  [ROOK]: "r",
+  [QUEEN]: "q",
+};
+
+const PROMO_TYPE: Record<string, PromotionType> = {
+  n: KNIGHT,
+  b: BISHOP,
+  r: ROOK,
+  q: QUEEN,
+};
+
+/**
+ * A move as four or five characters, for example `e2e4` or `e7e8q`.
+ *
+ * SAN is written for a person to read and needs the whole position to resolve. This is
+ * written for a wire and resolves from the two squares alone, which is what a move sent
+ * between two machines wants.
+ */
+export function toUci(move: Move): string {
+  const promo = move.promo === 0 ? "" : (PROMO_LETTER[move.promo] ?? "");
+  return algebraic(move.from) + algebraic(move.to) + promo;
+}
+
+/**
+ * The legal move a string names, or null.
+ *
+ * Resolution is a lookup against the moves the position actually allows, so this is the
+ * validation as well as the parse. Nothing that fails to match here can be played, which
+ * is what lets a server accept a move from a client it does not trust.
+ */
+export function fromUci(pos: Position, uci: string): Move | null {
+  if (uci.length !== 4 && uci.length !== 5) return null;
+  const from = parseSquare(uci.slice(0, 2));
+  const to = parseSquare(uci.slice(2, 4));
+  if (from === NO_SQUARE || to === NO_SQUARE) return null;
+
+  const promo = uci.length === 5 ? PROMO_TYPE[uci[4] as string] : undefined;
+  if (uci.length === 5 && promo === undefined) return null;
+
+  return (
+    legalMoves(pos).find(
+      (m) =>
+        m.from === from &&
+        m.to === to &&
+        (promo === undefined ? m.promo === 0 : m.promo === promo),
+    ) ?? null
+  );
 }
