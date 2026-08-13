@@ -1159,6 +1159,233 @@ if (wantShots) await phone.screenshot({ path: `${OUT}/board-phone.png` });
 await phone.close();
 
 /*
+ * Two browsers, one room.
+ *
+ * Everything below the browser is already proven: the service against two stores, the
+ * server against real sockets, and two instances against one Redis. None of that answers
+ * whether a person can open a link and play, which is the only claim the feature actually
+ * makes. So this drives two real pages against a real server and watches one board change
+ * because the other one did.
+ *
+ * The server here keeps its rooms in memory on purpose. Pointing this at the real store
+ * would spend the global five-room cap on a test run and leave rooms behind.
+ */
+const roomServer = process.env.NEXT_PUBLIC_ROOM_SERVER ?? "";
+console.log("\n[rooms]");
+
+if (roomServer === "") {
+  check("NEXT_PUBLIC_ROOM_SERVER is set, so the build can reach a room server", false);
+} else {
+  const roomPort = Number(new URL(roomServer).port || "80");
+  let roomUp = false;
+  try {
+    await fetch(`http://localhost:${roomPort}/health`, { signal: AbortSignal.timeout(700) });
+    check(`nothing is already listening on ${roomPort}`, false, "stop it and run again");
+  } catch {
+    const child = spawn("node", ["server/index.ts"], {
+      stdio: "ignore",
+      detached: true,
+      env: { ...process.env, PORT: String(roomPort), ALLOWED_ORIGINS: base, REDIS_URL: "" },
+    });
+    servers.push(child);
+    roomUp = await waitForServer(`http://localhost:${roomPort}/health`, 40);
+    check("the room server came up", roomUp);
+  }
+
+  if (roomUp) {
+    const open = async (url) => {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 560, height: 780, deviceScaleFactor: 1 });
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(String(e)));
+      page.on("console", (m) => {
+        if (m.type() === "error") errors.push(m.text());
+      });
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".board-surface", { timeout: 15000 });
+      return { page, errors };
+    };
+
+    /** Opens the room dialog and reads what it says about the room. */
+    const roomInfo = async (page) => {
+      // A background tab is throttled hard, and two pages means one of them always is.
+      await page.bringToFront();
+      await page.evaluate(() => {
+        const trigger = [...document.querySelectorAll("button")].find((b) =>
+          (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+        );
+        trigger?.click();
+      });
+      const node = await page.waitForSelector("[data-room-key]", { timeout: 8000 });
+      const info = await node.evaluate((n) => ({
+        key: n.dataset.roomKey,
+        seat: n.dataset.roomSeat,
+        opponent: n.dataset.roomOpponent,
+      }));
+      await page.keyboard.press("Escape");
+      await new Promise((r) => setTimeout(r, 250));
+      return info;
+    };
+
+    const host = await open(base);
+
+    // Create through the interface rather than through the socket, so the button, the
+    // dialog and the hook are all part of what is being checked.
+    await host.page.evaluate(() => {
+      const trigger = document.querySelector('button[aria-label="Play a friend"]');
+      trigger?.click();
+    });
+    await host.page.waitForSelector("[data-room-key], form", { timeout: 8000 });
+    await host.page.evaluate(() => {
+      const create = [...document.querySelectorAll("button")].find(
+        (b) => b.textContent?.trim() === "Create a room",
+      );
+      create?.click();
+    });
+
+    const keyNode = await host.page
+      .waitForSelector("[data-room-key]", { timeout: 10000 })
+      .catch(() => null);
+    check("creating a room hands back a key", keyNode !== null);
+
+    if (keyNode !== null) {
+      const hosted = await keyNode.evaluate((n) => ({
+        key: n.dataset.roomKey,
+        seat: n.dataset.roomSeat,
+      }));
+      check("the key is six characters", hosted.key?.length === 6, hosted.key ?? "none");
+      await host.page.keyboard.press("Escape");
+
+      // The shared link, used exactly as a second player would receive it.
+      const guest = await open(`${base}/?room=${hosted.key}`);
+      const joined = await guest.page
+        .waitForFunction(
+          () =>
+            [...document.querySelectorAll("button")].some((b) =>
+              (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+            ),
+          { timeout: 12000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      check("opening the link joins the room", joined);
+
+      if (joined) {
+        const guestInfo = await roomInfo(guest.page);
+        check(
+          "the two players hold different seats",
+          guestInfo.seat !== hosted.seat && guestInfo.seat !== "",
+          `${hosted.seat} and ${guestInfo.seat}`,
+        );
+
+        const hostInfo = await roomInfo(host.page);
+        check(
+          "the first player is told someone arrived",
+          hostInfo.opponent === "here",
+          `reads ${hostInfo.opponent}`,
+        );
+
+        // White moves first, whoever that turned out to be.
+        const mover = hosted.seat === "white" ? host : guest;
+        const watcher = hosted.seat === "white" ? guest : host;
+
+        /** Selects an own piece, takes the first legal target, and clicks it. */
+        const makeMove = async (page) => {
+          await page.bringToFront();
+          const plan = await page.evaluate(async () => {
+            // A timer rather than a frame. `requestAnimationFrame` never fires in a
+            // backgrounded tab, and with two pages open one of them always is, so waiting
+            // on a frame here hangs instead of failing.
+            const settle = () => new Promise((r) => setTimeout(r, 40));
+            const own = [...document.querySelectorAll(".sq")].filter((n) =>
+              (n.getAttribute("aria-label") ?? "").includes("your "),
+            );
+            for (const square of own) {
+              square.click();
+              await settle();
+              const target = document.querySelector(".hint-dot")?.closest(".sq");
+              if (target) {
+                const to = target.dataset.sq;
+                target.click();
+                await settle();
+                return { from: square.dataset.sq, to };
+              }
+              square.click();
+              await settle();
+            }
+            return null;
+          });
+          return plan;
+        };
+
+        const first = await makeMove(mover.page);
+        check("the player to move can move", first !== null);
+
+        if (first !== null) {
+          // The square is named from the reader's point of view, so the piece that just
+          // arrived is "opponent" on the board that did not move it.
+          await watcher.page.bringToFront();
+          const arrived = await watcher.page
+            .waitForFunction(
+              (square) => {
+                const node = document.querySelector(`[data-sq="${square}"]`);
+                return (node?.getAttribute("aria-label") ?? "").includes("opponent");
+              },
+              { timeout: 8000 },
+              first.to,
+            )
+            .then(() => true)
+            .catch(() => false);
+          check("a move crosses to the other board", arrived, `${first.from} to ${first.to}`);
+
+          const reply = await makeMove(watcher.page);
+          check("the other player can answer", reply !== null);
+
+          if (reply !== null) {
+            await mover.page.bringToFront();
+            const returned = await mover.page
+              .waitForFunction(
+                (square) => {
+                  const node = document.querySelector(`[data-sq="${square}"]`);
+                  return (node?.getAttribute("aria-label") ?? "").includes("opponent");
+                },
+                { timeout: 8000 },
+                reply.to,
+              )
+              .then(() => true)
+              .catch(() => false);
+            check("the answer comes back", returned, `${reply.from} to ${reply.to}`);
+          }
+        }
+
+        // Leaving is the state the indicator exists for.
+        await guest.page.close();
+        await host.page.bringToFront();
+        const noticed = await host.page
+          .waitForFunction(
+            () => document.body.innerText.toLowerCase().includes("opponent away"),
+            { timeout: 12000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        check("a player who leaves is reported away", noticed);
+
+        const roomErrors = [...host.errors, ...guest.errors].filter(
+          (e) => !/websocket|network|failed to fetch/i.test(e),
+        );
+        check(
+          "no page errors while playing a room",
+          roomErrors.length === 0,
+          roomErrors[0] ?? "",
+        );
+      }
+    }
+
+    await host.page.close().catch(() => {});
+  }
+}
+
+/*
  * Hydration, against a development server.
  *
  * React only reports hydration mismatches in development, so every check above is
@@ -1171,6 +1398,10 @@ console.log("\n[hydration, dev server]");
 // two cannot run together. Everything above is done with the production server.
 stopServers();
 await new Promise((r) => setTimeout(r, 1200));
+
+// Last, and it has to be last: `next dev` rewrites `.next` underneath the production
+// server started above, which then stops answering. Anything needing that server runs
+// before this point.
 const devPort = port + 1;
 const devBase = `http://localhost:${devPort}`;
 startServer(["next", "dev", "-p", String(devPort)]);
@@ -1206,6 +1437,7 @@ if (!(await waitForServer(devBase))) {
     await page.close();
   }
 }
+
 await browser.close();
 stopServers();
 
