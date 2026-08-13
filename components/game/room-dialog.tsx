@@ -4,6 +4,7 @@ import { CheckIcon, CopyIcon, LinkIcon } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button.tsx";
+import { TextMorph } from "@/components/ui/text-morph.tsx";
 import { isValidKey, KEY_LENGTH, normalizeKey } from "@/lib/room/key.ts";
 import { cn } from "@/lib/utils.ts";
 import { PresenceDot, presenceWords } from "./presence-dot.tsx";
@@ -37,6 +38,9 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const inside = room.key !== null;
+  // Narrowed once here rather than at each use. `inside` already proves it, but the flag is
+  // a boolean and the compiler cannot follow it back to the field.
+  const roomKey = room.key ?? "";
   const busy = room.status === "connecting" || room.status === "reconnecting";
 
   useEffect(() => {
@@ -91,13 +95,27 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
             <div className="mt-5 flex flex-col gap-4">
               <div className="flex flex-col items-center gap-2 rounded-xl bg-[var(--board-dark)] px-4 py-5">
                 <span className="text-xs text-[var(--ink-soft)]">Room key</span>
+                {/*
+                  Split so the last character carries no tracking.
+
+                  `letter-spacing` adds its gap after every character including the final
+                  one, and that gap is part of the character's advance, so it gets painted
+                  by the selection highlight and pushes the whole key half a gap left of
+                  centre. A negative end margin fixes the centring and not the highlight,
+                  because a margin is layout and the highlight follows the text run.
+
+                  Measured: this removes 8.4px of highlight past the last letter and 4.2px
+                  of off-centring, and the highlight stays visually continuous because the
+                  two runs sit flush against each other.
+                */}
                 <span
                   data-room-key={room.key}
                   data-room-seat={room.seat ?? ""}
                   data-room-opponent={room.opponent}
-                  className="font-mono text-2xl tracking-[0.35em] tabular-nums"
+                  className="font-mono text-2xl tabular-nums"
                 >
-                  {room.key}
+                  <span className="tracking-[0.35em]">{roomKey.slice(0, -1)}</span>
+                  <span>{roomKey.slice(-1)}</span>
                 </span>
               </div>
 
@@ -109,12 +127,17 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
                   disabled={room.link === null}
                   onClick={() => void copy("link", room.link ?? "")}
                 >
-                  {copied === "link" ? (
-                    <CheckIcon className="size-4" aria-hidden="true" />
-                  ) : (
-                    <LinkIcon className="size-4" aria-hidden="true" />
-                  )}
-                  {copied === "link" ? "Copied" : "Copy link"}
+                  <span className="swap-icons size-4 shrink-0">
+                    <LinkIcon
+                      className={cn("size-4", copied === "link" && "swap-out-a")}
+                      aria-hidden="true"
+                    />
+                    <CheckIcon
+                      className={cn("size-4", copied !== "link" && "swap-out-b")}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <TextMorph>{copied === "link" ? "Copied" : "Copy link"}</TextMorph>
                 </Button>
                 <Button
                   variant="quiet"
@@ -122,18 +145,23 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
                   className="flex-1"
                   onClick={() => void copy("key", room.key ?? "")}
                 >
-                  {copied === "key" ? (
-                    <CheckIcon className="size-4" aria-hidden="true" />
-                  ) : (
-                    <CopyIcon className="size-4" aria-hidden="true" />
-                  )}
-                  {copied === "key" ? "Copied" : "Copy key"}
+                  <span className="swap-icons size-4 shrink-0">
+                    <CopyIcon
+                      className={cn("size-4", copied === "key" && "swap-out-a")}
+                      aria-hidden="true"
+                    />
+                    <CheckIcon
+                      className={cn("size-4", copied !== "key" && "swap-out-b")}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <TextMorph>{copied === "key" ? "Copied" : "Copy key"}</TextMorph>
                 </Button>
               </div>
 
               <div className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
                 <PresenceDot presence={room.opponent} />
-                <span>{presenceWords(room.opponent)}</span>
+                <TextMorph>{presenceWords(room.opponent)}</TextMorph>
                 <span className="ml-auto text-xs">
                   You are {room.seat === null ? "seated" : room.seat}
                 </span>

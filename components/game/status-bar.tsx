@@ -1,5 +1,6 @@
 "use client";
 
+import { TextMorph } from "@/components/ui/text-morph.tsx";
 import type { Presence } from "@/lib/room/protocol.ts";
 import { MaterialReadout } from "./material-readout.tsx";
 import { PresenceDot } from "./presence-dot.tsx";
@@ -58,7 +59,7 @@ export function StatusBar({
       <div className="flex h-5 items-center justify-center gap-2">
         <PresenceDot presence={waitingOn} />
         <p role="status" className="text-sm lowercase" style={{ color: "var(--ink-soft)" }}>
-          {WAITING[waitingOn]}
+          <TextMorph>{WAITING[waitingOn]}</TextMorph>
         </p>
       </div>
     );
