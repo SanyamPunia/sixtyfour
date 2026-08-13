@@ -5,7 +5,7 @@ joins, and both see whether the other is actually there.
 
 This is the plan of record for the feature. `PLAN.md` covers what is already built.
 
-Nothing here is implemented yet. Section 12 is the order to build it in.
+Nothing here is implemented yet. Section 14 is the order to build it in.
 
 ---
 
@@ -403,7 +403,54 @@ rather than jump.
 
 ---
 
-## 11. Running it, and keeping the gate honest
+## 11. The cross-origin boundary
+
+The game and the room server are two deployables, so they are two origins. Everything in
+this section follows from that, and none of it is optional.
+
+**The WebSocket must check `Origin` itself.** Browsers do not apply the same-origin policy
+to WebSocket connections and send no preflight. A server that accepts any upgrade will
+happily be driven by a page on someone else's domain. Check the header against an allowlist
+in the upgrade handler and refuse anything not on it. This is the one security control the
+feature genuinely needs, and it is four lines.
+
+**The HTTP endpoints need CORS**, because create and join are cross-origin `POST`s from the
+browser. Same allowlist, returned as `Access-Control-Allow-Origin`, plus an `OPTIONS`
+handler for the preflight.
+
+The allowlist is an environment variable, not a constant, because it differs per
+environment: `localhost:3000` in development, the production domain in production, and every
+Vercel preview URL if previews are meant to work. Previews are the part people forget, and
+the symptom is a feature that works everywhere except in review.
+
+**`wss://` in production, not `ws://`.** A page served over HTTPS cannot open an insecure
+socket, so a room server without TLS is unreachable from the deployed game even though it
+works locally.
+
+---
+
+## 12. Deploying the server
+
+The game deploys as it does today and is unaffected.
+
+The room server is a long lived process, which is a different thing from what this repo has
+deployed before. It needs:
+
+- A start command, `node server/index.js`, and a build step to get there
+- `REDIS_URL` and `ALLOWED_ORIGINS` in its environment
+- A health endpoint, `GET /health`, so the platform can tell a wedged process from a busy one
+- One instance is enough. The five-room cap means it will never need a second, and a single
+  process makes the pub/sub fan-out mostly a local concern
+
+**One wrinkle worth knowing before it costs an hour.** `lib/` imports are relative and carry
+explicit `.ts` extensions, because `node --test` resolves neither the `@/` alias nor a bare
+specifier. The server imports `lib/room/` and `lib/chess/`, so whatever builds it has to
+accept that convention. Node's own type stripping does, which is the path of least
+resistance and keeps the server dependency-free beyond `ws` and `ioredis`.
+
+---
+
+## 13. Running it, and keeping the gate honest
 
 ### Two processes locally
 
@@ -447,7 +494,7 @@ the room server's port is what stops a stale process from making a green run mea
 
 ---
 
-## 12. Order of work
+## 14. Order of work
 
 Each step ends somewhere testable.
 
@@ -468,7 +515,7 @@ the interface. The cap becomes the atomic script from section 3.
 *Exit: the same suite passes against the provisioned store, including the cap under
 concurrent creates.*
 
-**3. `server/`: the Node service and the pub/sub fan-out.** `http.createServer` with a `ws`
+**3. `server/`: the Node service, the pub/sub fan-out, and the origin check.** `http.createServer` with a `ws`
 `WebSocketServer`, a subscriber per process, and a publish on every state change. Rate
 limits on create and join. No framework and no platform API, so it runs with `node` locally.
 *Exit: two `wscat` sessions on one room see each other's moves, against a server started
@@ -488,15 +535,38 @@ establish.
 **6. The dialog and the presence dot.** Section 9's budget is the constraint.
 *Exit: the flow works from a shared link and from a typed key.*
 
-**7. Two-page browser verification.** Section 13, plus the harness work in section 11: a
+**7. Two-page browser verification.** Section 15, plus the harness work in section 13: a
 second server started detached, its own port guard, and a local Redis.
 
 ---
 
-## 13. How it gets verified
+## 15. How it gets verified
 
-The existing suite drives one page. Rooms need two, and the interesting failures are all
-about what the second page sees. Puppeteer drives both directly.
+Three layers, because the failures live in different places.
+
+### The service, with `node --test`
+
+`lib/room/service.test.ts` against the in-memory store. Illegal move, move out of turn, move
+from a player who is not in the room, two moves racing on one version, two joins racing for
+one seat, a sixth room refused. No network, no provider, no browser.
+
+### The server, with two socket clients
+
+Between the pure logic and the browser sits a layer neither of them covers: connection
+handling. A `node --test` file that opens real `ws` clients against a server on a random port
+catches what the other two cannot.
+
+- A connection from a disallowed `Origin` is refused.
+- Two clients on one room see each other's `moved` messages.
+- **Closing the last socket for a room unsubscribes from that key.** This is the one that
+  leaks silently: nothing breaks, the process just accumulates subscriptions until it falls
+  over days later, and no user-facing test will ever see it.
+- Reconnecting with a stale `version` gets a full `state`, not a replay.
+
+### The browser, with two pages
+
+The interesting failures here are all about what the second page sees. Puppeteer drives both
+directly.
 
 - A creates a room, B joins with the key, both report the same position.
 - A move on A appears on B without a poll interval's delay, which is the reason for the
@@ -522,7 +592,7 @@ both need the patience to sit and watch nothing happen for the right length of t
 
 ---
 
-## 14. Open questions
+## 16. Open questions
 
 1. **Who picks sides?** Simplest is the creator choosing white, black or random when making
    the room. Deciding when the second player joins needs another round trip and another
@@ -543,7 +613,7 @@ both need the patience to sit and watch nothing happen for the right length of t
 
 ---
 
-## 15. Out of scope
+## 17. Out of scope
 
 Accounts, matchmaking against strangers, ratings, chat, saved history, tournaments. Each one
 turns a small game you send to a friend into a service that needs moderation.
