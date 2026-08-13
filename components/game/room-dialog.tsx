@@ -87,11 +87,7 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
               : "Open a room and share the key, or type one you were given."}
           </Dialog.Description>
 
-          {room.status === "off" ? (
-            <p className="mt-5 text-sm text-[var(--ink-soft)]">
-              Rooms are not configured on this build.
-            </p>
-          ) : inside ? (
+          {inside ? (
             <div className="mt-5 flex flex-col gap-4">
               <div className="flex flex-col items-center gap-2 rounded-xl bg-[var(--board-dark)] px-4 py-5">
                 <span className="text-xs text-[var(--ink-soft)]">Room key</span>
