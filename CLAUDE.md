@@ -108,13 +108,14 @@ problem, and hand-rolling it produces an accessibility bug rather than a saved d
 app/                    layout, page, globals.css
 public/                 click.mp3, move.mp3, capture.mp3, the only binary assets
 components/
-  game/                 the one feature. Components, hooks, reducer, and motion constants
+  game/                 the one feature. Components, hooks, and motion constants
     pieces/             one SVG component per piece type
   ui/                   shadcn primitives
   smooth-corners.tsx    measures the board, then writes the squircle clip path
 lib/
   sound.ts              every clip and its volume, in one place. No React
   chess/                pure engine. No React
+  game/                 reducer and piece identity. Pure, so node --test can reach it
   bot/                  pure search plus the worker entry. No React
   squircle.ts           continuous-corner path generator
   utils.ts              cn()

@@ -6,8 +6,8 @@ import { chooseMove, THINK_FLOOR_MS } from "@/lib/bot/levels.ts";
 import { toFen } from "@/lib/chess/board.ts";
 import { legalMoves } from "@/lib/chess/rules.ts";
 import type { Move } from "@/lib/chess/types.ts";
-import type { GameAction, GameState } from "./reducer.ts";
-import { isGameOver } from "./reducer.ts";
+import type { GameAction, GameState } from "@/lib/game/reducer.ts";
+import { isGameOver } from "@/lib/game/reducer.ts";
 
 /**
  * Runs the bot when it is the bot's turn.

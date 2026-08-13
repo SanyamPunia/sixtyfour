@@ -1,14 +1,16 @@
 "use client";
 
+import type { Difficulty } from "@/lib/game/reducer.ts";
 import { DifficultyButton } from "./difficulty-button.tsx";
 import { NewGameButton } from "./new-game-button.tsx";
-import type { Difficulty } from "./reducer.ts";
 import { ThemeToggle } from "./theme-toggle.tsx";
 
 interface ControlBarProps {
   difficulty: Difficulty;
   thinking: boolean;
   moveCount: number;
+  /** The game is over, so new game is the only thing left to do. */
+  attention: boolean;
   onDifficulty: (next: Difficulty) => void;
   onNewGame: () => void;
 }
@@ -26,6 +28,7 @@ export function ControlBar({
   difficulty,
   thinking,
   moveCount,
+  attention,
   onDifficulty,
   onNewGame,
 }: ControlBarProps) {
@@ -33,7 +36,12 @@ export function ControlBar({
     <div className="flex items-center justify-center gap-1">
       <ThemeToggle />
       <DifficultyButton difficulty={difficulty} thinking={thinking} onChange={onDifficulty} />
-      <NewGameButton hasProgress={moveCount > 0} moveCount={moveCount} onNewGame={onNewGame} />
+      <NewGameButton
+        hasProgress={moveCount > 0}
+        moveCount={moveCount}
+        attention={attention}
+        onNewGame={onNewGame}
+      />
     </div>
   );
 }

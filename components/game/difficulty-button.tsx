@@ -2,8 +2,8 @@
 
 import { Button } from "@/components/ui/button.tsx";
 import { Tooltip } from "@/components/ui/tooltip.tsx";
+import type { Difficulty } from "@/lib/game/reducer.ts";
 import { cn } from "@/lib/utils.ts";
-import type { Difficulty } from "./reducer.ts";
 
 const ORDER: readonly Difficulty[] = ["easy", "medium", "hard"];
 

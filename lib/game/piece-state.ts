@@ -9,9 +9,9 @@
  * So the identity list is threaded forward through every move instead.
  */
 
-import { at, colorOf, fileOf, off, rankOf, typeOf } from "@/lib/chess/board.ts";
-import type { Color, Move, PieceType, Position, Square } from "@/lib/chess/types.ts";
-import { EMPTY, FLAG_CASTLE, FLAG_EN_PASSANT, KING, WHITE } from "@/lib/chess/types.ts";
+import { at, colorOf, fileOf, off, rankOf, typeOf } from "../chess/board.ts";
+import type { Color, Move, PieceType, Position, Square } from "../chess/types.ts";
+import { EMPTY, FLAG_CASTLE, FLAG_EN_PASSANT, KING, WHITE } from "../chess/types.ts";
 
 export interface PieceView {
   /** Stable for the piece's whole life, including across a promotion. */

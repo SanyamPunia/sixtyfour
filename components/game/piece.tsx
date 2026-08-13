@@ -1,6 +1,6 @@
 import type { Color } from "@/lib/chess/types.ts";
+import { columnOf, type PieceView, rowOf } from "@/lib/game/piece-state.ts";
 import { cn } from "@/lib/utils.ts";
-import { columnOf, type PieceView, rowOf } from "./piece-state.ts";
 import { PieceGlyph } from "./pieces/glyphs.tsx";
 
 interface PieceProps {

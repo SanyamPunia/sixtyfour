@@ -5,10 +5,17 @@ import { SmoothCorners } from "@/components/smooth-corners.tsx";
 import { at, fileOf, rankOf } from "@/lib/chess/board.ts";
 import { describeSquare } from "@/lib/chess/notation.ts";
 import { isCapture } from "@/lib/chess/rules.ts";
-import type { Color, Move, Position, Square as SquareIndex } from "@/lib/chess/types.ts";
+import type {
+  Color,
+  Move,
+  Position,
+  PromotionType,
+  Square as SquareIndex,
+} from "@/lib/chess/types.ts";
 import { EMPTY } from "@/lib/chess/types.ts";
+import { type PieceView, squareAt } from "@/lib/game/piece-state.ts";
 import { Piece } from "./piece.tsx";
-import { type PieceView, squareAt } from "./piece-state.ts";
+import { PromotionPicker } from "./promotion-picker.tsx";
 import { Square, type SquareState } from "./square.tsx";
 import { usePieceDrag } from "./use-piece-drag.ts";
 
@@ -25,6 +32,10 @@ interface BoardProps {
   interactive: boolean;
   shakeToken: number;
   resetToken: number;
+  pendingPromotion: { to: SquareIndex } | null;
+  over: boolean;
+  onPromote: (piece: PromotionType) => void;
+  onCancelPromotion: () => void;
   onGrab: (square: SquareIndex) => void;
   onSelect: (square: SquareIndex) => void;
 }
@@ -57,6 +68,10 @@ export function Board({
   interactive,
   shakeToken,
   resetToken,
+  pendingPromotion,
+  over,
+  onPromote,
+  onCancelPromotion,
   onGrab,
   onSelect,
 }: BoardProps) {
@@ -218,6 +233,7 @@ export function Board({
       role="group"
       aria-label="Chess board"
       className="board-surface relative w-full"
+      data-over={over || undefined}
     >
       <SmoothCorners radius={BOARD_RADIUS} className="grid grid-cols-8 overflow-hidden">
         {squares}
@@ -236,6 +252,13 @@ export function Board({
           />
         ))}
       </div>
+      {pendingPromotion !== null && (
+        <PromotionPicker
+          square={pendingPromotion.to}
+          onChoose={onPromote}
+          onCancel={onCancelPromotion}
+        />
+      )}
     </div>
   );
 }

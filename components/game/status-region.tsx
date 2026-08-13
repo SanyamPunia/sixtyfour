@@ -1,4 +1,4 @@
-import type { GameState } from "./reducer.ts";
+import type { GameState } from "@/lib/game/reducer.ts";
 
 /**
  * The only running commentary the game has, and it is invisible.

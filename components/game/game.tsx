@@ -3,8 +3,6 @@
 import { useReducer } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip.tsx";
 import { isCapture, materialBalance } from "@/lib/chess/rules.ts";
-import { Board } from "./board.tsx";
-import { ControlBar } from "./control-bar.tsx";
 import {
   checkedKingSquare,
   createGame,
@@ -12,7 +10,10 @@ import {
   isGameOver,
   isHumanTurn,
   matedKingSquare,
-} from "./reducer.ts";
+  outcome,
+} from "@/lib/game/reducer.ts";
+import { Board } from "./board.tsx";
+import { ControlBar } from "./control-bar.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { StatusRegion } from "./status-region.tsx";
 import { useBot } from "./use-bot.ts";
@@ -41,7 +42,7 @@ export function Game() {
           <StatusBar
             yourTurn={state.position.side === state.humanColor}
             thinking={state.thinking}
-            over={isGameOver(state.status)}
+            outcome={outcome(state)}
             materialLead={materialLead}
           />
           <Board
@@ -57,6 +58,10 @@ export function Game() {
             interactive={isHumanTurn(state)}
             shakeToken={state.shakeToken}
             resetToken={state.resetToken}
+            pendingPromotion={state.pendingPromotion}
+            over={isGameOver(state.status)}
+            onPromote={(piece) => dispatch({ type: "promote", piece })}
+            onCancelPromotion={() => dispatch({ type: "cancelPromotion" })}
             onGrab={(square) => dispatch({ type: "grab", square })}
             onSelect={(square) => dispatch({ type: "select", square })}
           />
@@ -64,6 +69,7 @@ export function Game() {
             difficulty={state.difficulty}
             thinking={state.thinking}
             moveCount={state.history.length}
+            attention={isGameOver(state.status)}
             onDifficulty={(difficulty) => dispatch({ type: "setDifficulty", difficulty })}
             onNewGame={() => dispatch({ type: "newGame" })}
           />
