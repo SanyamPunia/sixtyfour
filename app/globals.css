@@ -453,12 +453,55 @@ body {
 }
 
 /*
- * Theme toggle. Both icons ship and CSS picks one, so nothing depends on JavaScript
- * having run and there is no post-hydration icon swap.
+ * Toggling icons.
+ *
+ * Both icons ship and CSS picks one, so nothing depends on JavaScript having run and there
+ * is no post-hydration swap. `display: none` cannot be transitioned, so they stack and the
+ * hidden one is turned and shrunk away instead.
+ *
+ * The two hidden states rotate opposite ways, which is what makes the pair read as one
+ * continuous turn rather than two icons passing each other. With a single shared hidden
+ * state the outgoing icon spins one way and the incoming the other, and it reads as a
+ * glitch.
  */
-:root[data-theme="dark"] .icon-to-dark,
+.swap-icons {
+  position: relative;
+  display: block;
+}
+
+.swap-icons > * {
+  position: absolute;
+  inset: 0;
+  transition:
+    opacity var(--dur-quick) var(--ease-soft),
+    rotate var(--dur-settle) var(--ease-pop),
+    scale var(--dur-settle) var(--ease-pop);
+}
+
+.swap-out-a,
+.swap-out-b {
+  opacity: 0;
+  scale: 0.4;
+}
+
+.swap-out-a {
+  rotate: -110deg;
+}
+
+.swap-out-b {
+  rotate: 110deg;
+}
+
+:root[data-theme="dark"] .icon-to-dark {
+  opacity: 0;
+  scale: 0.4;
+  rotate: -110deg;
+}
+
 :root:not([data-theme="dark"]) .icon-to-light {
-  display: none;
+  opacity: 0;
+  scale: 0.4;
+  rotate: 110deg;
 }
 
 /* ---------------------------------------------------------------- dialog -- */
@@ -602,6 +645,7 @@ body {
   .bar-equalise,
   .digit-roll,
   .turn-dot,
+  .swap-icons > *,
   .result-in,
   [data-attention="true"],
   .tooltip-content,

@@ -12,6 +12,9 @@ export const THEME_STORAGE_KEY = "sixtyfour-theme";
  * Both icons are rendered and CSS picks one from `data-theme` on the root. Deciding in
  * JavaScript would mean the server rendering one icon and the client swapping it after
  * hydration, which is a visible flash on every load for anyone using dark.
+ *
+ * They stack rather than one being removed, so the change can be animated. See
+ * `.swap-icons` in globals.css.
  */
 export function ThemeToggle() {
   const toggle = (): void => {
@@ -28,8 +31,10 @@ export function ThemeToggle() {
   return (
     <Tooltip label="Toggle theme">
       <Button aria-label="Toggle light and dark theme" onClick={toggle}>
-        <MoonIcon className="icon-to-dark size-[18px]" aria-hidden="true" />
-        <SunIcon className="icon-to-light size-[18px]" aria-hidden="true" />
+        <span className="swap-icons size-[18px]">
+          <MoonIcon className="icon-to-dark size-[18px]" aria-hidden="true" />
+          <SunIcon className="icon-to-light size-[18px]" aria-hidden="true" />
+        </span>
       </Button>
     </Tooltip>
   );

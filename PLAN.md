@@ -987,3 +987,14 @@ behind: the object still said `opponent` while the comparison read `.black`. Bot
 `undefined < undefined` are false, so the player-capture branch could never fire and the
 check sat there passing on nothing. It only surfaced because the bot-capture branch, which
 used a key that did get renamed, kept working and made the asymmetry obvious.
+
+
+**Toggling icons animate.** Both the theme and the mute button ship both icons and let CSS
+pick, which is what keeps them off the hydration path. `display: none` cannot be
+transitioned, so they stack and the hidden one is turned and shrunk away instead.
+
+The two hidden states rotate opposite ways. With one shared hidden state the outgoing icon
+spins one way and the incoming spins the other, and the pair reads as a glitch rather than
+as one continuous turn. Measured mid-swap: the outgoing icon passes its target at 113
+degrees and the incoming overshoots to 1.018 before settling, which is the pop easing doing
+the snap.
