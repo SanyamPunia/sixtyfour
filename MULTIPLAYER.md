@@ -3,9 +3,38 @@
 Play a friend. One player creates a room, shares a link or a six character key, the other
 joins, and both see whether the other is actually there.
 
-This is the plan of record for the feature. `PLAN.md` covers what is already built.
+This is the design record for the feature. `PLAN.md` covers the single-player product.
 
-Nothing here is implemented yet. Section 14 is the order to build it in.
+**Built.** Every section below still describes what was built, and the reasoning in sections
+1, 2 and 8 is why it is shaped this way. Section 14 was the build order and was followed.
+The paragraphs below record what changed on contact with the work.
+
+## What the build changed
+
+**Staleness is judged before anything else about a move.** The plan implied checking the
+turn first. A player who missed two moves is on their own turn holding a legal-looking move,
+so a turn check would refuse it with a reason that is both false and unactionable. The one
+true answer is that they are behind, and only the version knows that.
+
+**Taking a seat advances the room version, so the player already seated is told.** This was
+not in the plan and is the one bug in the feature that reports healthy while the game simply
+never starts: the first player's opening move is judged against a board that moved on when
+their opponent sat down, and is correctly refused as stale. A join now publishes the
+snapshot. `server/hub.test.ts` has a test named for it.
+
+**Presence is one number, not a state machine.** The plan described three states and a
+grace window. All three fall out of how stale one timestamp is, so a clean disconnect needs
+no flag of its own: it backdates the heartbeat and the value ages into `gone` by itself.
+
+**Seats do not swap on a rematch.** Swapping is the politer convention, but it changes a
+player's colour underneath them with no move to explain it, and the honest version needs a
+message of its own. Section 16 listed this as open.
+
+**The rules ended up knowing nothing.** `lib/room/service.ts` takes a store and returns
+decisions. The server decodes, calls one function, and publishes. That split is what let
+every race be tested in milliseconds against an in-memory store and then re-tested unchanged
+against the live one, which is how the join race and the move race are proven over a real
+network rather than argued about.
 
 ---
 

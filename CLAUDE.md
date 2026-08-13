@@ -54,26 +54,57 @@ What this means in practice:
 If you are unsure whether a sentence leaks, delete the sentence. Nothing in this project is
 worth a traceable mention.
 
-## Planned work
+## Rooms
 
-`MULTIPLAYER.md` is the plan for rooms: play a friend over a shared link or a typed key,
-with a truthful indication of whether they are actually there. None of it is built.
+Play a friend over a shared link or a typed key. `MULTIPLAYER.md` is the design record and
+still holds the reasoning, in particular sections 1 and 2 on why this is a WebSocket server
+on portable code rather than anything host-specific.
 
-It is the first feature that needs a backend and the first that costs money to run, so read
-its sections 1 and 2 before starting: the transport choice and the reason for it are the
-decisions everything else hangs off.
+The shape, in one line: a Node process holds the sockets, Redis holds the rooms and fans
+messages between processes, and every rule lives in `lib/room/service.ts`, which knows about
+neither.
+
+Three things are worth knowing before changing any of it.
+
+1. **The server decides.** A move is shown locally the moment it is made and is not real
+   until it comes back. Anything refused is undone by replacing the board with the one the
+   server sent. Never move a check into the client, and never trust a move as coordinates:
+   resolve it against the position's own legal list, which is what `fromUci` does.
+2. **Rooms are capped at five, globally.** This is a hobby project on one small instance and
+   the cap is what stops a link somewhere busy turning into a bill. The check and the write
+   are one atomic step in the store, because a service that counts and then writes lets two
+   simultaneous creates make a sixth.
+3. **A version guards every write.** Taking a seat advances it as well as moving does, so a
+   player who is already seated has to be told when someone sits down. Forgetting that is a
+   bug where everything reports healthy and the first move is refused as stale. There is a
+   regression test named for it.
 
 ## Commands
 
 ```bash
 pnpm dev
+pnpm room         # the room server, port 3001. Needs REDIS_URL for anything real
 pnpm typecheck
 pnpm lint         # biome
-pnpm test         # node:test, includes the perft suite
+pnpm test         # node:test, includes the perft suite and the live-store contract
 pnpm build
 pnpm check        # the gate: lint, typecheck, test, build
 pnpm verify       # drives the built app in a real browser, run after pnpm build
 ```
+
+## Environment
+
+`.env.local` is git-ignored and holds all of it. Nothing here has a default worth shipping.
+
+| Variable | Used by | What happens without it |
+|---|---|---|
+| `REDIS_URL` | room server, tests | The server keeps rooms in memory, which is fine for one process on a laptop and wrong for anything else. The live-store tests skip. |
+| `ALLOWED_ORIGINS` | room server | Defaults to `http://localhost:3000`. Every other origin is refused, which is the whole point, so a deployment that does not set this serves nobody. |
+| `NEXT_PUBLIC_ROOM_SERVER` | the site | Rooms report as unavailable in the interface. Baked in at build time, so changing it needs a rebuild. |
+| `PORT` | room server | 3001. |
+
+Use `rediss://` and not `redis://`, and the native endpoint rather than a REST one.
+`MULTIPLAYER.md` section 2 has the reason: a REST API cannot hold a subscription.
 
 ## Stack declaration
 
@@ -90,8 +121,8 @@ pnpm verify       # drives the built app in a real browser, run after pnpm build
 | Fonts | Geist for sans, Geist Mono, Inter for the material badge |
 | Class helper | `cn()` |
 | Primitives | `radix-ui` for tooltip and the confirm dialog, styled with this project's tokens. Never hand-roll a focus trap or a dismissible overlay. |
-| Runtime dependencies | Next, React, lucide-react, clsx, tailwind-merge, radix-ui, class-variance-authority. Adding anything else needs a reason in this table. |
-| Dev dependencies | Biome, TypeScript, Tailwind, puppeteer-core (drives the browser verification script) |
+| Runtime dependencies | Next, React, lucide-react, clsx, tailwind-merge, radix-ui, class-variance-authority. Plus two the room server needs and the site never imports: `ws` for the sockets and `ioredis` for the store. Adding anything else needs a reason in this table. |
+| Dev dependencies | Biome, TypeScript, Tailwind, puppeteer-core (drives the browser verification script), `@types/ws` |
 | Build gate | `pnpm check` |
 
 ## Dependency rule
@@ -128,13 +159,35 @@ lib/
   chess/                pure engine. No React
   game/                 reducer and piece identity. Pure, so node --test can reach it
   bot/                  pure search plus the worker entry. No React
+  room/                 every rule a room has, plus the wire types both sides import
   squircle.ts           continuous-corner path generator
   utils.ts              cn()
+server/                 the room server process. Never imported by the site
 scripts/
   verify.mjs            drives the built app in Chrome and asserts against the real DOM
 ```
 
 `lib/` holds no React. Hooks live with their feature in `components/game/`.
+
+**`lib/room/` is the rules, and it knows about nothing.** No sockets, no Redis, no React.
+`service.ts` takes a `RoomStore` and returns decisions, which is why the races that matter
+are tested in milliseconds against `memory-store.ts` and then re-tested unchanged against
+the real one. `protocol.ts` is imported by both the browser and the server, so it is the
+contract between two things that deploy separately: every message carries `protocol`, and a
+mismatch is refused rather than guessed at.
+
+**`server/` is a shell over that, and should stay one.** `hub.ts` decodes a message, calls
+one function in the service, and publishes the answer. `guards.ts` holds the origin
+allowlist and the rate limiter, both pure, because a security check that needs a live socket
+to exercise tends not to get exercised. `http-api.ts` is the polling fallback and calls the
+same service functions, so the two transports cannot come to disagree about what is legal.
+`start.ts` builds a server, `index.ts` decides to. If a rule ever needs adding, it goes in
+`lib/room/`, not here.
+
+**`node --test` runs `server/` too.** `guards.test.ts` is pure. `hub.test.ts` drives real
+sockets on a real port. `cross-instance.test.ts` runs two servers against one Redis, which
+is the only test that can catch a move reaching one process and not the other, and it skips
+without `REDIS_URL`.
 
 **Imports inside `lib/` are relative, with an explicit `.ts` extension.** `node --test`
 runs those files directly and resolves neither the `@/` alias nor an extensionless

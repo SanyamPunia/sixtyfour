@@ -416,19 +416,37 @@ All colour lives in `globals.css`. Components never write a hex value or a palet
 
 ```css
 :root {
-  --surface: …;        /* page */
-  --board-light: …;    /* near white */
-  --board-dark: …;     /* very light grey */
-  --sq-select: …;      /* pale blue */
-  --sq-lastmove: …;    /* paler blue */
-  --sq-hint: …;        /* dot and ring */
-  --sq-check: …;       /* checked or mated king */
-  --piece-own: …;      /* the human, mid grey */
-  --piece-opponent: …; /* the bot, near black */
+  --surface: …;         /* page */
+  --board-light: …;     /* near white */
+  --board-dark: …;      /* very light grey */
+  --sq-select: …;       /* warm sand */
+  --sq-lastmove: …;     /* paler sand */
+  --sq-hint: …;         /* dot and ring */
+  --sq-check: …;        /* checked or mated king */
+  --focus-ring: …;
+  --piece-white: …;     /* the lighter of the pair, in both themes */
+  --piece-black: …;     /* the darker of the pair, in both themes */
   --ink: …;
   --ink-soft: …;
+  --danger: …;          /* destructive fill */
+  --danger-ink: …;      /* text on it, pinned because brand tokens invert */
+  --presence-here: …;   /* the opponent is connected */
+  --presence-away: …;   /* seen recently, not now */
+  --presence-gone: …;   /* a ring, drawn empty */
 }
 ```
+
+The piece tokens are keyed to the chess colour and never to who owns the piece. That was
+wrong once and produced a board where Black turned white in dark mode. Only the
+relationship is fixed: White is the lighter of the pair and Black the darker, in both
+themes. The absolute values differ, because a literal white and a literal black cannot both
+sit on one pair of square tones.
+
+The presence tokens are the only colour in the product that is not the board, the pieces or
+a destructive action. They earn it because the question has no monochrome answer: a dot can
+say something changed, but not "still here" against "gone", and being wrong there means
+waiting for a move from someone who left. They are desaturated well below a conventional
+status green, since they sit two centimetres from a board built out of five greys.
 
 Light is the default and the theme is the player's explicit choice, not a system reading.
 The dark tokens live under `:root[data-theme="dark"]`, and an inline blocking script in
