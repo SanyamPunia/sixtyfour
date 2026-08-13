@@ -1363,7 +1363,13 @@ if (!hasRedis) {
       await host.page.bringToFront();
       const noticed = await host.page
         .waitForFunction(
-          () => document.body.innerText.toLowerCase().includes("opponent away"),
+          // Whitespace is normalised because the morphing text emits non-breaking spaces,
+          // so a plain `includes("opponent away")` never matches. `\s` covers U+00A0.
+          () =>
+            document.body.innerText
+              .replace(/\s+/g, " ")
+              .toLowerCase()
+              .includes("opponent away"),
           { timeout: 30000 },
         )
         .then(() => true)

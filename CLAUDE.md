@@ -123,7 +123,8 @@ this needs.
 | Fonts | Geist for sans, Geist Mono, Inter for the material badge |
 | Class helper | `cn()` |
 | Primitives | `radix-ui` for tooltip and the confirm dialog, styled with this project's tokens. Never hand-roll a focus trap or a dismissible overlay. |
-| Runtime dependencies | Next, React, lucide-react, clsx, tailwind-merge, radix-ui, class-variance-authority, plus `ioredis`, which only the room routes import. Adding anything else needs a reason in this table. |
+| Text that changes | `torph` via `components/ui/text-morph.tsx`, never imported directly at a call site. |
+| Runtime dependencies | Next, React, lucide-react, clsx, tailwind-merge, radix-ui, class-variance-authority, `torph`, plus `ioredis`, which only the room routes import. Adding anything else needs a reason in this table. |
 | Dev dependencies | Biome, TypeScript, Tailwind, puppeteer-core (drives the browser verification script) |
 | Build gate | `pnpm check` |
 
@@ -140,9 +141,21 @@ written version was faster, smaller, or exact:
 
 Do not add any of the three back without a measurement that says otherwise.
 
-`radix-ui` is the exception, and deliberately so. A confirm dialog needs a focus trap,
+`radix-ui` is an exception, and deliberately so. A confirm dialog needs a focus trap,
 scroll lock, escape handling, and correct `alertdialog` semantics. That is not a styling
 problem, and hand-rolling it produces an accessibility bug rather than a saved dependency.
+
+`torph` is the second exception, and it does not reopen the animation-library question. It
+animates one thing: a string changing into a different string, segment by segment. CSS
+cannot do that at all, because there is no way to address the parts of a text node, so this
+is not a case of paying for something already covered. Measured before adding: 6KB gzipped
+across both entry points, no dependencies, MIT.
+
+It also takes stiffness and damping, which is the same parameterisation the `linear()`
+easings were sampled from, so `text-morph.tsx` passes the settle spring the pieces already
+slide on. The dependency adopts the project's motion rather than introducing its own.
+
+Everything else stays as it was. Do not reach for it to fade, slide, or stagger anything.
 
 ## Architecture
 
@@ -153,7 +166,7 @@ public/                 click.mp3, move.mp3, capture.mp3, the only binary assets
 components/
   game/                 the one feature. Components, hooks, and motion constants
     pieces/             one SVG component per piece type
-  ui/                   shadcn primitives
+  ui/                   shadcn primitives, plus text-morph.tsx
   smooth-corners.tsx    measures the board, then writes the squircle clip path
   site-credit.tsx       the byline, pinned bottom right
 lib/
@@ -197,8 +210,8 @@ in `PLAN.md` section 6.1. Those run from 90ms to 420ms.
 `duration-200`.** The exception is scoped to board and piece motion. Controls keep 150ms
 and 200ms for hover and press, exactly as the global rule requires.
 
-Every timing value is a named constant in `components/game/motion.ts`. No magic numbers in
-JSX.
+Every timing and easing value is a token in `globals.css`, and the springs those were
+sampled from are recorded with the design notes. No magic numbers in JSX.
 
 ## Piece identity
 
