@@ -11,10 +11,17 @@ interface NewGameButtonProps {
   /** A game with no moves has nothing to lose, so it restarts without asking. */
   hasProgress: boolean;
   moveCount: number;
+  /** Draws the eye once the game is finished, since nothing else on the board can act. */
+  attention: boolean;
   onNewGame: () => void;
 }
 
-export function NewGameButton({ hasProgress, moveCount, onNewGame }: NewGameButtonProps) {
+export function NewGameButton({
+  hasProgress,
+  moveCount,
+  attention,
+  onNewGame,
+}: NewGameButtonProps) {
   const [confirming, setConfirming] = useState(false);
   const [spinToken, setSpinToken] = useState(0);
 
@@ -28,6 +35,7 @@ export function NewGameButton({ hasProgress, moveCount, onNewGame }: NewGameButt
       <Tooltip label="New game">
         <Button
           aria-label="New game"
+          data-attention={attention || undefined}
           onClick={() => (hasProgress ? setConfirming(true) : start())}
         >
           <RotateCcwIcon

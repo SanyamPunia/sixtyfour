@@ -146,3 +146,11 @@ test("SAN covers captures, castling, promotion, disambiguation, and mate", () =>
     "Qh5",
   );
 });
+
+test("outcome-bearing positions are classified", () => {
+  // Scholar's mate delivered: Black to move and mated.
+  const mate = parseFen("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
+  assert.equal(gameStatus(mate), "checkmate");
+  // The side to move is the side that lost, which is what the UI reads.
+  assert.equal(mate.side, BLACK);
+});
