@@ -115,6 +115,7 @@ components/
   site-credit.tsx       the byline, pinned bottom right
 lib/
   sound.ts              every clip and its volume, in one place. No React
+  preferences.ts        difficulty, side and mute, stored and read back. No React
   chess/                pure engine. No React
   game/                 reducer and piece identity. Pure, so node --test can reach it
   bot/                  pure search plus the worker entry. No React

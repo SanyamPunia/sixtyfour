@@ -1,8 +1,9 @@
 "use client";
 
-import { useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip.tsx";
 import { isCapture, materialBalance } from "@/lib/chess/rules.ts";
+import { BLACK, type Color, WHITE } from "@/lib/chess/types.ts";
 import {
   checkedKingSquare,
   createGame,
@@ -12,6 +13,15 @@ import {
   matedKingSquare,
   outcome,
 } from "@/lib/game/reducer.ts";
+import {
+  readDifficulty,
+  readMuted,
+  readSide,
+  writeDifficulty,
+  writeMuted,
+  writeSide,
+} from "@/lib/preferences.ts";
+import { setMuted } from "@/lib/sound.ts";
 import { Board } from "./board.tsx";
 import { ControlBar } from "./control-bar.tsx";
 import { StatusBar } from "./status-bar.tsx";
@@ -21,7 +31,46 @@ import { useMoveSound } from "./use-move-sound.ts";
 
 export function Game() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createGame());
+  const [muted, setMutedState] = useState(false);
   useBot(state, dispatch);
+
+  /*
+   * Stored choices are applied on mount rather than read while building the initial state.
+   *
+   * The reducer's initialiser runs on the server too, where there is no localStorage, and
+   * branching on that is what produces a hydration mismatch. One frame of the default
+   * lands inside the piece entrance animation, so nothing is visible.
+   */
+  useEffect(() => {
+    const difficulty = readDifficulty();
+    if (difficulty !== null) dispatch({ type: "setDifficulty", difficulty });
+
+    const side = readSide();
+    if (side === "black") dispatch({ type: "setSide", color: BLACK });
+
+    const storedMute = readMuted();
+    if (storedMute) {
+      setMuted(true);
+      setMutedState(true);
+    }
+  }, []);
+
+  const changeDifficulty = (difficulty: typeof state.difficulty): void => {
+    writeDifficulty(difficulty);
+    dispatch({ type: "setDifficulty", difficulty });
+  };
+
+  const changeSide = (color: Color): void => {
+    writeSide(color === WHITE ? "white" : "black");
+    dispatch({ type: "setSide", color });
+  };
+
+  const toggleMute = (): void => {
+    const next = !muted;
+    setMuted(next);
+    writeMuted(next);
+    setMutedState(next);
+  };
   // Whoever made it. The bot taking a piece sounds the same as the player doing it.
   const lastMove = state.history.at(-1);
   useMoveSound(state.history.length, lastMove !== undefined && isCapture(lastMove));
@@ -56,6 +105,7 @@ export function Game() {
             matedKing={matedKingSquare(state)}
             castlingRookId={state.castlingRookId}
             interactive={isHumanTurn(state)}
+            flipped={state.humanColor === BLACK}
             shakeToken={state.shakeToken}
             resetToken={state.resetToken}
             pendingPromotion={state.pendingPromotion}
@@ -70,7 +120,11 @@ export function Game() {
             thinking={state.thinking}
             moveCount={state.history.length}
             attention={isGameOver(state.status)}
-            onDifficulty={(difficulty) => dispatch({ type: "setDifficulty", difficulty })}
+            humanColor={state.humanColor}
+            muted={muted}
+            onSide={changeSide}
+            onToggleMute={toggleMute}
+            onDifficulty={changeDifficulty}
             onNewGame={() => dispatch({ type: "newGame" })}
           />
         </div>

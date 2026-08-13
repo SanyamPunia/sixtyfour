@@ -28,6 +28,23 @@ const VOLUMES: Record<SoundName, number> = {
 };
 
 let elements: Map<SoundName, HTMLAudioElement> | null = null;
+let muted = false;
+
+/**
+ * Mute is checked here rather than at each call site, so nothing can make a noise by
+ * forgetting to ask. Elements are still built and kept warm while muted, because unmuting
+ * mid-game should not then be late on its first sound.
+ */
+export function setMuted(value: boolean): void {
+  muted = value;
+  if (!value) return;
+  if (elements === null) return;
+  for (const element of elements.values()) element.pause();
+}
+
+export function isMuted(): boolean {
+  return muted;
+}
 
 /**
  * Built on first use rather than at module scope.
@@ -48,6 +65,7 @@ function registry(): Map<SoundName, HTMLAudioElement> {
 }
 
 export function playSound(name: SoundName): void {
+  if (muted) return;
   const element = registry().get(name);
   if (element === undefined) return;
 
