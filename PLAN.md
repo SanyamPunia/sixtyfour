@@ -919,3 +919,24 @@ neither finished inside a sane turn budget, and the promotion check passed while
 "no promotion reached", which is not a pass. It now runs on a fresh game against the easy
 bot, which leaves material alone so a pawn can walk the board, and reaches the last rank in
 about sixteen moves.
+
+
+**The side button's icon showed nothing.** It was a pawn drawn with `own`, which resolves
+to the player's colour by definition, so it looked identical whichever side had been
+picked. It now takes the surrounding text colour like every other control icon, and the
+board behind it is already a 400px answer to which side you are on.
+
+Its box stays at 18px. Measured, its ink is 13.1px against 12 to 13.5 for the Lucide icons
+beside it, so matching the nominal size was right and my first correction to 22px was an
+overshoot.
+
+**The Open Graph image** is a file at `app/opengraph-image.png`, which is the convention
+Next reads: it emits the URL, type, dimensions and, from the `.alt.txt` beside it, the alt
+text, and mirrors all of it onto the Twitter card. Writing those tags by hand would mean
+maintaining five values that the file already knows.
+
+**The promotion check went from flaky to reliable by not giving up on a finished game.**
+Walking a pawn eight ranks while a bot answers every move sometimes ends in mate first, and
+the first version treated that as a pass while reporting "no promotion reached". It now
+starts another game and carries on, so the only real exit is a promotion. Six for six
+across three full runs.

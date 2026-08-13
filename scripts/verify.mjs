@@ -890,20 +890,36 @@ for (const scheme of ["light", "dark"]) {
   await page.click('[aria-label^="Bot difficulty"]');
 
   let dragPromotion = null;
-  for (let turn = 0; turn < 30 && dragPromotion === null; turn++) {
+  /*
+   * One loop, and a finished game is not the end of it.
+   *
+   * Walking a pawn eight ranks while a bot answers every move sometimes ends in mate
+   * first, and the earlier version gave up there and reported "no promotion reached" as a
+   * pass. It now starts another game and keeps going, so the only real exit is a promotion
+   * or the turn budget.
+   */
+  for (let turn = 0; turn < 110 && dragPromotion === null; turn++) {
     const plan = await page.evaluate(async () => {
       const frame = () => new Promise((r) => requestAnimationFrame(r));
       if (document.querySelector(".promo-choice") !== null) return { kind: "picker" };
       if (document.querySelector('.board-surface[data-over="true"]') !== null) {
         return { kind: "over" };
       }
-      // The most advanced pawn first, so this converges instead of wandering.
-      const pawns = [...document.querySelectorAll(".sq")]
-        .filter((n) => n.getAttribute("aria-label").includes("your pawn"))
-        .sort(
-          (a, b) =>
-            Number(b.getAttribute("aria-label")[1]) - Number(a.getAttribute("aria-label")[1]),
-        );
+
+      const label = (n) => n.getAttribute("aria-label");
+      const all = [...document.querySelectorAll(".sq")];
+      const enemyPawnFiles = new Set(
+        all.filter((n) => label(n).includes("opponent pawn")).map((n) => label(n)[0]),
+      );
+      // A pawn with a clear file first, then the most advanced: that is the one that gets
+      // through, rather than whichever happens to be furthest up a blocked file.
+      const pawns = all
+        .filter((n) => label(n).includes("your pawn"))
+        .sort((a, b) => {
+          const clear = (n) => (enemyPawnFiles.has(label(n)[0]) ? 0 : 1);
+          return clear(b) - clear(a) || Number(label(b)[1]) - Number(label(a)[1]);
+        });
+
       for (const square of pawns) {
         square.click();
         await frame();
@@ -921,7 +937,21 @@ for (const scheme of ["light", "dark"]) {
       }
       return { kind: "none" };
     });
-    if (plan.kind !== "move") break;
+
+    if (plan.kind === "over" || plan.kind === "none") {
+      // Start another one and carry on rather than reporting a pass with nothing tested.
+      await page.click('[aria-label="New game"]');
+      const asked = await page
+        .waitForFunction(() => document.querySelector('[role="alertdialog"]') !== null, {
+          timeout: 2000,
+        })
+        .then(() => true)
+        .catch(() => false);
+      if (asked) await page.click('[role="alertdialog"] button:last-of-type');
+      await new Promise((r) => setTimeout(r, 600));
+      continue;
+    }
+    if (plan.kind !== "move") continue;
 
     const box = (sq) =>
       page.$eval(`[data-sq="${sq}"]`, (n) => {
