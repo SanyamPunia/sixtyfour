@@ -63,15 +63,19 @@ export interface PieceGlyphProps {
   type: PieceType;
   /** Which side owns it, so the fill token can be picked without knowing chess colours. */
   own: boolean;
+  /** Takes the fill from the surrounding text instead, for use as a control icon. */
+  inherit?: boolean;
 }
 
-export function PieceGlyph({ type, own }: PieceGlyphProps) {
+export function PieceGlyph({ type, own, inherit = false }: PieceGlyphProps) {
   return (
     <svg
       viewBox="0 0 32 32"
       aria-hidden="true"
       className="pointer-events-none size-full"
-      style={{ fill: own ? "var(--piece-own)" : "var(--piece-opponent)" }}
+      style={{
+        fill: inherit ? "currentColor" : own ? "var(--piece-own)" : "var(--piece-opponent)",
+      }}
     >
       <path d={BODY} />
       <path d={MARKS[type]} />
