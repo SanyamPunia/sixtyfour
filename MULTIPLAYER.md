@@ -46,9 +46,10 @@ not just on Vercel.
 
 ### A shared store is required regardless
 
-A single connection is pinned to one function instance, but **new connections are not
-guaranteed to reach the same one**. Two players in a room routinely land on different
-instances, which cannot see each other's memory.
+A connection is held by whichever process accepted it, and **a second connection is not
+guaranteed to reach that same process**. Two players in a room routinely land on different
+instances, which cannot see each other's memory. This is true of any WebSocket server
+running more than one instance, so it is not something a deployment choice avoids.
 
 So a move from one player reaches the other by going through the store, not by one socket
 writing to another:
@@ -275,8 +276,8 @@ Three states, and the middle one is the whole point:
 
 **The grace window is what makes this honest.** The connection dies every five minutes by
 design, so a close event on its own means nothing. A player who disconnects and returns
-inside 20 seconds never appears to have left, which covers both the routine 300 second
-reconnect and a phone locked for a moment. Report those as gone and the indicator becomes
+inside 20 seconds never appears to have left, which covers a routine reconnect and a phone
+locked for a moment alike. Report those as gone and the indicator becomes
 noise that people learn to ignore, which is worse than not having it.
 
 Shown as a second dot beside the turn dot, in the language the board already speaks: solid
@@ -317,7 +318,7 @@ Each needs a state, and none can be silent.
 | Room is full | Same. Two people already hold the sides |
 | Room expired | Same, with the reason, since the link may be days old |
 | Opponent has not joined | "waiting for someone to join", key still visible |
-| The socket drops routinely | Nothing. This is the 300 second reconnect and it is invisible |
+| The socket drops and returns | Nothing. A routine reconnect is invisible by design |
 | Opponent goes away | The presence dot goes hollow after the grace window, not before |
 | Opponent is gone | The dot fades. The board stays, because they may come back |
 | WebSocket blocked entirely | Falls back to polling after a few failed attempts. Nothing else changes |
