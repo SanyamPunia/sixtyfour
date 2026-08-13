@@ -24,9 +24,16 @@ Three things follow, and they are the real cost of the feature:
 
 ---
 
-## 2. Transport: WebSockets
+## 2. Transport: WebSockets, on portable code
 
-Vercel Functions serve WebSockets natively, so no third party realtime service is needed.
+**Nothing here uses a Vercel API.** The realtime side is a plain Node process: `http`,
+`ws`, and `ioredis`. It runs on Vercel today and on Fly, Railway, Render or a VPS tomorrow
+with no code change, because there is nothing in it that knows where it is.
+
+That rules out `experimental_upgradeWebSocket()` from `@vercel/functions`, which exists
+only because Next.js does not expose upgrade handling. Using it would put the one piece of
+this feature that is hard to move behind a vendor's experimental API. A standard
+`WebSocketServer` over `http.createServer()` is the same amount of code and goes anywhere.
 
 Moves arrive the instant they are played. Nothing about this product tolerates a move
 appearing a second and a half after it was made: the whole board is tuned at the scale of
@@ -34,8 +41,8 @@ a 190ms slide and a 140ms lift, and a delay an order of magnitude larger than th
 the slowest thing on screen by a wide margin. Presence is also better served, because a tab
 closing produces a `close` event immediately rather than a heartbeat quietly going stale.
 
-Two facts from the platform shape the design, and neither is a reason to avoid WebSockets.
-They are a reason to build two specific things.
+One fact about distributed WebSocket servers shapes the design, and it is true everywhere,
+not just on Vercel.
 
 ### A shared store is required regardless
 
@@ -65,9 +72,12 @@ thing to get wrong here.
 needs a held connection. `@upstash/redis`, the HTTP SDK, exists for edge runtimes such as
 Cloudflare Workers where TCP is unavailable, and it is the wrong client for this.
 
-Use the native protocol instead: `ioredis` against the `rediss://` endpoint. Vercel
-Functions on Fluid Compute are Node.js with full TCP, so the reason the HTTP SDK exists does
-not apply to us.
+Use the native protocol instead: `ioredis` against the `rediss://` endpoint. This is a Node
+process with full TCP, so the reason the HTTP SDK exists does not apply.
+
+Upstash is itself portable: it is Redis. Anything speaking the Redis protocol can replace it
+without the room code noticing, which is the point of not reaching for a proprietary API to
+talk to it.
 
 ```
 PUBLISH   works over either. It is fire and forget
@@ -76,24 +86,31 @@ SUBSCRIBE needs the TCP endpoint. This decides the client
 
 Two consequences worth planning for:
 
-- **One subscriber connection per function instance, not per player.** Fluid Compute reuses
-  instances, so a subscriber survives across invocations and is shared by every room that
-  instance is serving. Subscribe per room key and unsubscribe when the last local socket for
-  that room closes, or instances slowly accumulate dead subscriptions.
+- **One subscriber connection per server process, not per player.** It is shared by every
+  room that process is serving. Subscribe on a room key when the first local socket for it
+  opens, and unsubscribe when the last one closes, or a long lived process slowly
+  accumulates dead subscriptions.
 - **`ioredis` is a new runtime dependency**, and the first in this project that is not UI.
   `CLAUDE.md` lists the runtime dependencies and says adding one needs a reason in that
   table. This is the reason, and that table gets updated when this ships.
 
-### The connection dies every five minutes, and that is fine
+### Reconnection, and one constraint that is not ours
 
-A connection closes when the function reaches its maximum duration, 300 seconds by default.
-A chess game routinely runs longer, so **a healthy game will reconnect several times**. That
-is normal, not an error, and the client reconnects with backoff.
+Sockets drop. Networks change, laptops sleep, proxies time out. The client reconnects with
+backoff and resumes from its `version`, and that is required wherever this runs.
 
-The only thing it must not do is show up as "your opponent left". Section 7 handles that
-with a grace window: a socket that closes and comes back inside a few seconds never changes
-what the other player sees. Getting this wrong is what makes multiplayer feel broken, so it
-is called out here rather than left to the presence code to discover.
+**On Vercel specifically there is a second cause**: a function closes its connections when
+it reaches its maximum duration, 300 seconds by default, so a healthy game reconnects every
+few minutes. That is a property of running on serverless functions, not of the design. On a
+long lived Node process there is no such clock and connections last as long as the network
+holds them.
+
+Keeping the server portable therefore removes the constraint rather than working around it.
+The reconnect logic stays either way, because networks drop regardless, but the forced
+five minute cycle is something the deployment target decides.
+
+Whatever the cause, a reconnect must not show up as "your opponent left". Section 7 handles
+that with a grace window. Getting it wrong is what makes multiplayer feel broken.
 
 ### Polling is the fallback, not the design
 
@@ -101,6 +118,18 @@ Some networks block WebSocket upgrades. If the socket cannot establish after a f
 attempts, the client falls back to polling the same room endpoint every 1.5 seconds. It is
 worse, and it is much better than a blank screen. The transport sits behind one interface
 so the fallback is a swap rather than a second implementation of the game.
+
+### What is portable, and what is not
+
+| | |
+|---|---|
+| `lib/room/` | Plain TypeScript. Runs anywhere, tested with `node --test` |
+| `server/` | `http`, `ws`, `ioredis`. Runs with `node index.js` on anything |
+| The store | Redis. Upstash today, any Redis tomorrow, no code change |
+| The game | Already a static page. Unchanged by this |
+| Deployment | The only thing tied to a platform, and it is a `Dockerfile` or a start command |
+
+The single dependency on where this runs is the URL in `NEXT_PUBLIC_ROOM_SERVER`.
 
 ---
 
@@ -148,17 +177,23 @@ client cannot put an illegal position on the board even if it tries.
 
 ## 5. Shape
 
+Two deployables, because they have nothing in common. The game is a static page. The room
+server is a long lived process holding sockets. Keeping them apart is also what keeps the
+game deployable anywhere it is today.
+
 ```
-lib/room/
+lib/room/           shared by both sides. No React, no Node, no browser API
   key.ts            generate and validate a room key
-  protocol.ts       every message either side can send, shared by client and server
+  protocol.ts       every message either side can send
   store.ts          the store interface: state, atomic swap, pub/sub, the room cap
   service.ts        create, join, move, leave. Pure logic over the store
   service.test.ts
-app/api/room/
-  route.ts                POST, create a room
-  [key]/ws/route.ts       the WebSocket, via experimental_upgradeWebSocket
-  [key]/route.ts          GET, the polling fallback. POST, join
+
+server/             a plain Node service. No framework, no platform API
+  index.ts          http.createServer plus a ws WebSocketServer
+  routes.ts         POST /rooms, GET /rooms/:key, and the socket at /rooms/:key/ws
+  redis.ts          ioredis, and the per-instance subscriber
+
 components/game/
   use-room.ts       the client half: connect, reconnect, send, reconcile
   room-transport.ts the socket, its backoff, and the polling fallback behind one interface
@@ -167,8 +202,16 @@ components/game/
   presence-dot.tsx  is the other player there
 ```
 
-`lib/room/` holds no React, like `lib/chess` and `lib/bot`, so `node --test` reaches the
-service directly with no network and no provider.
+The room server owns everything about rooms, including create and join. Splitting those
+into Next route handlers would mean two services talking to the same Redis for the same
+data, and would put half the feature back inside the framework.
+
+The client reaches it through one environment variable, `NEXT_PUBLIC_ROOM_SERVER`. The game
+keeps working with that unset: the room control simply does not appear, and the bot is the
+whole product, exactly as it is today.
+
+`lib/room/` holds no React and no Node API, so `node --test` reaches the service directly
+with no network and no provider, and the client can import the same types.
 
 ### Room state
 
@@ -295,11 +338,11 @@ rather than jump.
 
 Each step ends somewhere testable.
 
-**0. Provision Upstash Redis** through the Vercel Marketplace, and wire it with `ioredis`
-against the `rediss://` endpoint rather than `@upstash/redis`. Section 2 has the reason.
-Prove pub/sub works across two processes before writing anything else: a publisher in one
-`node` process and a subscriber in another, both against the real instance. If that does not
-work, nothing above it will, and it is ten lines to find out.
+**0. Provision Upstash Redis** and wire it with `ioredis` against the `rediss://` endpoint,
+not `@upstash/redis`. Section 2 has the reason. Prove pub/sub works across two processes
+before writing anything else: a publisher in one `node` process and a subscriber in another,
+both against the real instance. If that does not work, nothing above it will, and it is ten
+lines to find out.
 
 **1. `lib/room/` against an in-memory store.** Key generation, protocol types, and the
 service: create, join, move, leave, plus the five room cap. Unit tests for an illegal move,
@@ -312,10 +355,11 @@ the interface. The cap becomes the atomic script from section 3.
 *Exit: the same suite passes against the provisioned store, including the cap under
 concurrent creates.*
 
-**3. The WebSocket route and pub/sub fan-out.** `experimental_upgradeWebSocket`, a
-subscriber per instance, and the publish on every state change. Rate limits on create and
-join.
-*Exit: two `wscat` sessions on one room see each other's moves.*
+**3. `server/`: the Node service and the pub/sub fan-out.** `http.createServer` with a `ws`
+`WebSocketServer`, a subscriber per process, and a publish on every state change. Rate
+limits on create and join. No framework and no platform API, so it runs with `node` locally.
+*Exit: two `wscat` sessions on one room see each other's moves, against a server started
+with `node`, not a deploy.*
 
 **4. `use-room.ts` and the transport.** Connect, backoff, reconnect, resume from `version`,
 optimistic local moves, reconcile on rejection, identity in `localStorage`. This is where
