@@ -11,9 +11,34 @@ const mono = Geist_Mono({
 // Carried by the material badge alone, where tabular figures have to line up.
 const numeric = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
+const SITE = "https://sixtyfour-liart.vercel.app";
+const DESCRIPTION = "A very small chess game. Play the bot at three difficulties.";
+
 export const metadata: Metadata = {
+  // Without this, Next resolves relative Open Graph URLs against localhost and every
+  // shared link points somewhere private.
+  metadataBase: new URL(SITE),
   title: "sixtyfour",
-  description: "A very small chess game. Play the bot at three difficulties.",
+  description: DESCRIPTION,
+  applicationName: "sixtyfour",
+  authors: [{ name: "Sanyam Punia", url: "https://sanyam.sh" }],
+  creator: "Sanyam Punia",
+  keywords: ["chess", "chess game", "play chess", "chess bot", "minimal"],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: SITE,
+    siteName: "sixtyfour",
+    title: "sixtyfour",
+    description: DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "sixtyfour",
+    description: DESCRIPTION,
+    creator: "@sanyampunia",
+  },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
