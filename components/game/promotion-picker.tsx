@@ -19,6 +19,8 @@ interface PromotionPickerProps {
   /** The square the pawn is arriving on. */
   square: number;
   flipped: boolean;
+  /** The promoting side, so the choices are drawn in that colour. */
+  white: boolean;
   onChoose: (piece: PromotionType) => void;
   onCancel: () => void;
 }
@@ -33,7 +35,13 @@ interface PromotionPickerProps {
  * A scrim behind it takes a click as a cancel. Backing out has to be possible: the move is
  * not played until one of these is chosen.
  */
-export function PromotionPicker({ square, flipped, onChoose, onCancel }: PromotionPickerProps) {
+export function PromotionPicker({
+  square,
+  flipped,
+  white,
+  onChoose,
+  onCancel,
+}: PromotionPickerProps) {
   const column = columnOf(square, flipped);
   const row = rowOf(square, flipped);
   // Promoting on the near edge would run the stack off the board, so it flips upward.
@@ -69,7 +77,7 @@ export function PromotionPicker({ square, flipped, onChoose, onCancel }: Promoti
             className="promo-choice aspect-square w-full cursor-pointer p-[6%]"
             onClick={() => onChoose(piece)}
           >
-            <PieceGlyph type={piece} own={true} />
+            <PieceGlyph type={piece} white={white} />
           </button>
         ))}
       </div>

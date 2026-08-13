@@ -61,24 +61,33 @@ const MARKS: Record<PieceType, string> = {
 
 export interface PieceGlyphProps {
   type: PieceType;
-  /** Which side owns it, so the fill token can be picked without knowing chess colours. */
-  own: boolean;
+  /** The chess colour. White renders light and Black renders dark, in both themes. */
+  white: boolean;
   /** Takes the fill from the surrounding text instead, for use as a control icon. */
   inherit?: boolean;
 }
 
-export function PieceGlyph({ type, own, inherit = false }: PieceGlyphProps) {
+/**
+ * The edge is drawn under the fill with `paint-order`, so a stroke of any width only ever
+ * grows outward. Painted the default way it eats half its width into the silhouette and
+ * thins every piece.
+ */
+export function PieceGlyph({ type, white, inherit = false }: PieceGlyphProps) {
+  const paint = inherit
+    ? { fill: "currentColor", stroke: "none" }
+    : {
+        fill: white ? "var(--piece-white)" : "var(--piece-black)",
+        stroke: white ? "var(--piece-white-edge)" : "var(--piece-black-edge)",
+        strokeWidth: 0.9,
+        paintOrder: "stroke" as const,
+      };
+
   return (
-    <svg
-      viewBox="0 0 32 32"
-      aria-hidden="true"
-      className="pointer-events-none size-full"
-      style={{
-        fill: inherit ? "currentColor" : own ? "var(--piece-own)" : "var(--piece-opponent)",
-      }}
-    >
-      <path d={BODY} />
-      <path d={MARKS[type]} />
+    <svg viewBox="0 0 32 32" aria-hidden="true" className="pointer-events-none size-full">
+      <g style={paint}>
+        <path d={BODY} />
+        <path d={MARKS[type]} />
+      </g>
     </svg>
   );
 }

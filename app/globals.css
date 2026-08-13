@@ -35,8 +35,24 @@
   --sq-check: #f6c9c4;
   --focus-ring: #b6b0a4;
 
-  --piece-own: #9a9a9f;
-  --piece-opponent: #232326;
+  /*
+   * Keyed to the chess colour, not to who owns them.
+   *
+   * These used to be `--piece-own` and `--piece-opponent`, with the opponent always taking
+   * the higher-contrast tone so it stood out. That made the board lie: in dark mode your
+   * opponent rendered near-white whichever side they were actually playing, so if you were
+   * White your own pieces were the grey ones. Nobody can read a board that does that.
+   *
+   * A solid silhouette in a light fill disappears on a light square, so each side carries a
+   * thin edge in the opposite direction. That is what a real piece set does, and it is what
+   * lets both sides sit on both square tones.
+   */
+  --piece-white: #ffffff;
+  /* Carries the whole shape in this theme: a white fill on a near-white square is
+     invisible on its own, so the edge is darker than a rim light would need to be. */
+  --piece-white-edge: #97979f;
+  --piece-black: #26262a;
+  --piece-black-edge: #0d0d0f;
 
   --ink: #2a2a2c;
   --ink-soft: #8a8a90;
@@ -93,9 +109,10 @@
   --sq-check: #5f2320;
   --focus-ring: #6b6355;
 
-  /* Inverted so the opponent stays the higher-contrast side on a dark board. */
-  --piece-own: #85858e;
-  --piece-opponent: #e9e9ed;
+  --piece-white: #f4f4f7;
+  --piece-white-edge: #a8a8b0;
+  --piece-black: #101014;
+  --piece-black-edge: #55555f;
 
   --ink: #e6e6ea;
   --ink-soft: #7e7e88;

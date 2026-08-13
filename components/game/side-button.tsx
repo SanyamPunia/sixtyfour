@@ -42,7 +42,7 @@ export function SideButton({ humanColor, hasProgress, moveCount, onChange }: Sid
           onClick={() => (hasProgress ? setConfirming(true) : onChange(next))}
         >
           <span className="block size-[18px]">
-            <PieceGlyph type={PAWN} own={true} inherit />
+            <PieceGlyph type={PAWN} white inherit />
           </span>
         </Button>
       </Tooltip>

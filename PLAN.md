@@ -940,3 +940,45 @@ Walking a pawn eight ranks while a bot answers every move sometimes ends in mate
 the first version treated that as a pass while reporting "no promotion reached". It now
 starts another game and carries on, so the only real exit is a promotion. Six for six
 across three full runs.
+
+
+## 15. The board was lying about which side was which
+
+Reported as "very confusing in terms of who's starting and who's not", and it was a real
+defect, not a misreading.
+
+**Piece fill was keyed to ownership, not to chess colour.** `--piece-opponent` always took
+the higher-contrast tone so the opponent would stand out, which meant in dark mode the
+opponent rendered near-white whichever side they were actually playing. Play White and your
+own pieces were the grey ones while Black's were the bright ones. Two consequences followed
+directly, and both were reported:
+
+- Switching theme appeared to swap the colours, because the same piece went from near-black
+  to near-white.
+- Switching sides looked like it did nothing, because the bright pieces stayed at the top
+  either way. The board *was* flipping. The colours just did not follow.
+
+**Fill now follows the chess colour in both themes.** White renders light and Black renders
+dark, always. `--piece-own` and `--piece-opponent` are gone.
+
+A solid silhouette in a light fill vanishes on a light square, so each side carries a thin
+edge in the opposite direction, painted under the fill with `paint-order: stroke` so the
+stroke only ever grows outward instead of eating half its width off the shape. In the light
+theme that edge is doing most of the work and is deliberately darker than a rim light would
+need to be, because a white fill on a near-white square has nothing else to define it.
+
+**The turn dot names the side to move**, in that side's own fill, so it answers "whose turn"
+and "which side is that" at once. It also settles the question that prompted this: White
+moves first, always. When you play Black the bot opens, and the dot says so.
+
+**A verify check now asserts fill follows colour rather than ownership,** in both themes and
+from both sides, because this is the one defect that could be reintroduced by a token rename
+and would look fine in a screenshot of a single theme.
+
+### One more silently dead check
+
+Renaming the suite's piece counters from `own`/`opponent` to `white`/`black` left one key
+behind: the object still said `opponent` while the comparison read `.black`. Both sides of
+`undefined < undefined` are false, so the player-capture branch could never fire and the
+check sat there passing on nothing. It only surfaced because the bot-capture branch, which
+used a key that did get renamed, kept working and made the asymmetry obvious.

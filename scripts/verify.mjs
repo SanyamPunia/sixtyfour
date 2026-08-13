@@ -704,11 +704,10 @@ for (const scheme of ["light", "dark"]) {
     page.evaluate(() => ({
       // A taken piece stays mounted for one move so its exit animation can run, so the
       // live count has to exclude it or a capture never registers.
-      own: document.querySelectorAll('.piece:not([data-captured]) svg[style*="piece-own"]')
+      white: document.querySelectorAll('.piece:not([data-captured]) g[style*="piece-white"]')
         .length,
-      opponent: document.querySelectorAll(
-        '.piece:not([data-captured]) svg[style*="piece-opponent"]',
-      ).length,
+      black: document.querySelectorAll('.piece:not([data-captured]) g[style*="piece-black"]')
+        .length,
     }));
 
   let humanCapture = null;
@@ -803,7 +802,7 @@ for (const scheme of ["light", "dark"]) {
     if (played === "none" || played === "over") break;
 
     const afterHuman = await countPieces();
-    if (afterHuman.opponent < before.opponent) {
+    if (afterHuman.black < before.black) {
       humanCapture = await page.evaluate(() => window.__plays.at(-1) ?? "");
     }
 
@@ -817,7 +816,7 @@ for (const scheme of ["light", "dark"]) {
     if (!finished) break;
 
     const afterBot = await countPieces();
-    if (afterBot.own < afterHuman.own) {
+    if (afterBot.white < afterHuman.white) {
       botCapture = await page.evaluate(() => window.__plays.at(-1) ?? "");
     }
   }
@@ -1059,6 +1058,34 @@ for (const scheme of ["light", "dark"]) {
     `${cornerBefore} -> ${flipped.corner}`,
   );
   check("your pieces are still the near side", flipped.ownAtBottom);
+
+  /*
+   * The bug this replaced: piece fill was keyed to who owned the piece, so the opponent
+   * always took the high-contrast tone and, in dark mode, Black rendered near-white. Fill
+   * has to follow the chess colour, whichever side the player is on and whichever theme.
+   */
+  const byColour = await page.evaluate(() => {
+    const fillOf = (square) => {
+      const piece = document.querySelector(`.piece[data-square="${square}"] g`);
+      return piece === null ? "missing" : piece.style.fill;
+    };
+    // Playing as Black, so the near row is Black's back rank and the far row is White's.
+    const sq = (name) => {
+      const file = name.charCodeAt(0) - 97;
+      return (Number(name[1]) - 1) * 16 + file;
+    };
+    return { blackRook: fillOf(sq("a8")), whiteRook: fillOf(sq("a1")) };
+  });
+  check(
+    "fill follows the chess colour, not who owns the piece",
+    byColour.blackRook.includes("piece-black") && byColour.whiteRook.includes("piece-white"),
+    `a8 ${byColour.blackRook}, a1 ${byColour.whiteRook}`,
+  );
+  check(
+    `and it is the same in ${scheme} as in the other theme`,
+    byColour.whiteRook.includes("piece-white"),
+    byColour.whiteRook,
+  );
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {

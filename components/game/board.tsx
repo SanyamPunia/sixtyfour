@@ -12,7 +12,7 @@ import type {
   PromotionType,
   Square as SquareIndex,
 } from "@/lib/chess/types.ts";
-import { EMPTY } from "@/lib/chess/types.ts";
+import { EMPTY, WHITE } from "@/lib/chess/types.ts";
 import { type PieceView, squareAt } from "@/lib/game/piece-state.ts";
 import { Piece } from "./piece.tsx";
 import { PromotionPicker } from "./promotion-picker.tsx";
@@ -260,6 +260,7 @@ export function Board({
         <PromotionPicker
           square={pendingPromotion.to}
           flipped={flipped}
+          white={position.side === WHITE}
           onChoose={onPromote}
           onCancel={onCancelPromotion}
         />

@@ -1,4 +1,5 @@
 import type { Color } from "@/lib/chess/types.ts";
+import { WHITE } from "@/lib/chess/types.ts";
 import { columnOf, type PieceView, rowOf } from "@/lib/game/piece-state.ts";
 import { cn } from "@/lib/utils.ts";
 import { PieceGlyph } from "./pieces/glyphs.tsx";
@@ -53,7 +54,7 @@ export function Piece({
       }}
     >
       <div className="piece-body size-full p-[6%]">
-        <PieceGlyph type={piece.type} own={piece.color === humanColor} />
+        <PieceGlyph type={piece.type} white={piece.color === WHITE} />
       </div>
     </div>
   );

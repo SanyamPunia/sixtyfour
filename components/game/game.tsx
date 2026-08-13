@@ -90,6 +90,7 @@ export function Game() {
         <div className="flex w-full max-w-[min(100%,calc(100dvh-18rem))] flex-col gap-6">
           <StatusBar
             yourTurn={state.position.side === state.humanColor}
+            whiteToMove={state.position.side === WHITE}
             thinking={state.thinking}
             outcome={outcome(state)}
             materialLead={materialLead}
