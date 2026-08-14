@@ -79,10 +79,16 @@ Four things are worth knowing before changing any of it.
    therefore the latency of the whole feature and the request rate of the whole feature at
    the same time, which is why it changes with what is being waited for and stops entirely
    while the tab is hidden.
-3. **Rooms are capped at five, globally.** This is a hobby project on a free Redis and the
-   cap is what stops a link somewhere busy turning into a bill. The check and the write are
-   one atomic step in the store, because a handler that counts and then writes lets two
-   simultaneous creates make a sixth. There is no single process to serialise them.
+3. **Rooms are capped at five, globally, and that cap is also the attack surface.** The cap
+   is what stops a link somewhere busy turning into a bill. It is also the only way the
+   feature can be taken from everybody at once, because five requests with no account behind
+   them can hold every slot. Two things answer that, and both are needed. A room's lease
+   measures silence rather than age: any poll or move pushes it back, so a room lives as long
+   as somebody is in it and closes thirty minutes after the last of them stops looking. And
+   one caller may open five rooms an hour, so the slots cannot be retaken the moment they
+   free. The cap check and the write are one atomic step in the store, because a handler that
+   counts and then writes lets two simultaneous creates make a sixth, and there is no single
+   process to serialise them.
 4. **A version guards every write.** Taking a seat advances it as well as moving does. A
    poll is what tells the other player, so nothing needs to push that update, but the rule
    still holds: a move sent against a version the room has passed is refused rather than

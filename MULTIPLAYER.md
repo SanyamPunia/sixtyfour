@@ -52,6 +52,15 @@ window. All three fall out of how stale one timestamp is, so nothing needs a fla
 "disconnected". A poll is what keeps a seat warm, and a page that stops polling goes stale
 by itself.
 
+**A room lives as long as somebody is in it, not for a fixed term.** The plan proposed 24
+hours refreshed on every move. That is wrong in both directions: it kills a game two people
+paused for a day, and it hands every one of the five slots to anyone willing to send five
+requests and walk away. What the window should measure is silence, so the poll that keeps a
+seat present pushes the room's lease back as well, and thirty minutes of nobody asking is
+what closes it. The lease is extended rather than swapped, because a client holds the
+version to send its next move against and moving it would refuse a move that was never
+stale.
+
 **Seats do not swap on a rematch.** Swapping is the politer convention, but it changes a
 player's colour underneath them with no move to explain it, and the honest version needs a
 message of its own. Section 16 listed this as open.
@@ -652,7 +661,7 @@ Every one of these was answered during the build. Kept as written because the re
 each still explains why the answer went the way it did, and the answers are recorded at the
 top of this file and in `CLAUDE.md`.
 
-Decided: the creator picks a side, a room lives 24 hours refreshed on every move, a rematch
+Decided: the creator picks a side, a room lives as long as somebody is in it, a rematch
 reuses the same room and keeps both seats, and there are no clocks, no spectators and
 nothing special for abandonment beyond a seat becoming reclaimable.
 
