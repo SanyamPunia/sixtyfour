@@ -118,6 +118,7 @@ this needs.
 | Icon library | `lucide-react` |
 | Color system | Semantic tokens in `globals.css` only. **No hex, no palette utilities, no arbitrary color values in components.** See the token list in `PLAN.md` section 7. |
 | Type scale | `text-xs` and `text-sm` carry the UI. There is almost no text. |
+| Casing | **All lowercase**, via `text-transform` on `body`. Write copy in sentence case. |
 | Default radius | Squircle for the board via `lib/squircle.ts`. `rounded-full` for controls. |
 | Focus pattern | shadcn defaults |
 | Fonts | Geist for sans, Geist Mono, Inter for the material badge |
@@ -213,6 +214,30 @@ time, so the picture follows the theme.
 module-level singleton, because route handlers are called rather than started and there is
 nowhere to construct one and hand it around. A client per request would open a connection
 per request.
+
+## Casing
+
+**Everything renders lowercase, and that is done in `globals.css`, not in the copy.**
+
+The board surface was always lowercase: the result is the only sentence the game has, and
+"you win" sits better under a board than "You win" does. The dialogs arrived later in
+sentence case, and the two met inside the share dialog, where a card reading "you win" sat
+under a title reading "Share this game".
+
+**Write new copy in sentence case and let the stylesheet lower it.** The markup keeps real
+casing, so screen readers, copied text, the page title and anything a crawler reads all
+still get "Share this game". Writing the strings lowercase would throw that away for the
+same appearance.
+
+Two things need saying out loud:
+
+- **Form controls do not inherit it.** Tailwind's preflight sets `font: inherit` on them,
+  which does not carry `text-transform`, so `button`, `input`, `select` and `textarea` are
+  given it explicitly. Without that a label inside a button keeps its source casing while
+  everything around it lowercases.
+- **A room key is data, not style.** It is read out loud and typed back from an alphabet
+  that is uppercase by definition, so `[data-room-key]` is set to uppercase and the join
+  input keeps its own `uppercase`. It is the one string here whose case carries meaning.
 
 ## Motion rule, and one documented exception
 

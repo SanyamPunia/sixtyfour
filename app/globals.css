@@ -189,9 +189,42 @@
   --font-numeric: var(--font-inter);
 }
 
+/*
+ * Everything is lowercase, and it is done here rather than in the copy.
+ *
+ * The board surface was always lowercase, because the result is the only sentence the game
+ * has and "you win" sits better under a board than "You win" does. The dialogs arrived
+ * later in sentence case and the two met inside the share dialog, where a card reading
+ * "you win" sat under a title reading "Share this game".
+ *
+ * The markup keeps real casing. Screen readers, copied text, the page title and anything
+ * a crawler reads all still get "Share this game", and only the painted glyphs change.
+ * Writing the copy lowercase instead would have thrown that away for the same appearance.
+ */
 body {
   background: var(--surface);
   color: var(--ink);
+  text-transform: lowercase;
+}
+
+/*
+ * Form controls do not take it from `body` on their own, and Tailwind's preflight sets
+ * `font: inherit` on them, which does not carry text-transform. Without this a label inside
+ * a button keeps its source casing while the prose around it lowercases.
+ */
+button,
+input,
+select,
+textarea {
+  text-transform: inherit;
+}
+
+/*
+ * A room key is read out loud and typed back in, and it is drawn from an alphabet that is
+ * uppercase by definition. It is the one string here whose case is data rather than style.
+ */
+[data-room-key] {
+  text-transform: uppercase;
 }
 
 /* ---------------------------------------------------------------- board -- */

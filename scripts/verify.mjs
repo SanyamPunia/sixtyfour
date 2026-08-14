@@ -1743,6 +1743,55 @@ if (!hasRedis) {
        * link, which made two separate wrongs: creating a room lost it on reload, and
        * leaving one put you back in it, because the key was still sitting in the URL.
        */
+      /*
+       * The interface is lowercased in CSS, and the key is the one string that must not be.
+       *
+       * It is read out loud and typed back from an alphabet that is uppercase by
+       * definition, so its case is data. The markup keeps real casing everywhere, which is
+       * why this checks what is painted rather than what the element contains.
+       */
+      await host.page.bringToFront();
+      await host.page.evaluate(() => {
+        const trigger = [...document.querySelectorAll("button")].find((b) =>
+          (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+        );
+        trigger?.click();
+      });
+      await host.page.waitForSelector("[data-room-key]", { timeout: 8000 });
+
+      const casing = await host.page.evaluate(() => {
+        const key = document.querySelector("[data-room-key]");
+        const dialog = document.querySelector('[role="dialog"]');
+        const title = dialog?.firstElementChild ?? null;
+        return {
+          keyTransform: key === null ? "missing" : getComputedStyle(key).textTransform,
+          keyText: key?.textContent ?? "",
+          bodyTransform: getComputedStyle(document.body).textTransform,
+          buttonTransform: getComputedStyle(
+            document.querySelector('button[aria-label^="Room "]') ?? document.body,
+          ).textTransform,
+          titleText: title?.textContent ?? "",
+        };
+      });
+      check(
+        "the interface is lowercased in one place",
+        casing.bodyTransform === "lowercase" && casing.buttonTransform === "lowercase",
+        `body ${casing.bodyTransform}, button ${casing.buttonTransform}`,
+      );
+      check(
+        "the markup keeps real casing for anything read aloud or copied",
+        /[A-Z]/.test(casing.titleText),
+        casing.titleText || "no title",
+      );
+      check(
+        "the room key stays uppercase",
+        casing.keyTransform === "uppercase" && /^[A-Z0-9]{6}$/.test(casing.keyText),
+        `${casing.keyText} rendered ${casing.keyTransform}`,
+      );
+
+      await host.page.keyboard.press("Escape");
+      await new Promise((r) => setTimeout(r, 250));
+
       const hostUrl = await host.page.evaluate(() => window.location.search);
       check(
         "creating a room puts it in the address bar",
