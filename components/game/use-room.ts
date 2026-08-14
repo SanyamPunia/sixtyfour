@@ -66,6 +66,7 @@ const NOBODY: SeatMap<Presence> = { white: "gone", black: "gone" };
 const REFUSALS: Record<RejectReason, string> = {
   "not-found": "No room with that key.",
   full: "That room is full.",
+  "no-capacity": "All rooms are busy right now. Try again in a few minutes.",
   "not-your-seat": "This browser is not holding a seat in that room.",
   "not-your-turn": "Not your turn.",
   "game-over": "That game is finished.",
@@ -73,6 +74,24 @@ const REFUSALS: Record<RejectReason, string> = {
   unavailable: "Rooms are not available right now.",
   stale: "",
 };
+
+/**
+ * Keeps the address bar honest about which room you are in.
+ *
+ * The URL is what a reload reads, so it has to say the same thing the interface does. It
+ * used to be written only by the person who followed a shared link, which made two separate
+ * wrongs: someone who created a room lost it on reload, and someone who left a room was put
+ * back into it by one, because the key was still sitting in the address bar.
+ *
+ * `replaceState` rather than `pushState`. Joining and leaving are not places to go back to.
+ */
+function writeRoomToUrl(key: string | null): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (key === null) url.searchParams.delete(ROOM_PARAM);
+  else url.searchParams.set(ROOM_PARAM, key);
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
 
 function seatColor(seat: Seat): Color {
   return seat === "white" ? WHITE : BLACK;
@@ -130,6 +149,7 @@ export function useRoom(
         seatRef.current = message.seat;
         tokenRef.current = message.token;
         writeToken(message.room.key, message.token);
+        writeRoomToUrl(message.room.key);
         confirmedRef.current = [...message.room.moves];
         versionRef.current = message.room.version;
         sentRef.current = null;
@@ -199,10 +219,14 @@ export function useRoom(
         if (
           message.reason === "not-found" ||
           message.reason === "full" ||
+          message.reason === "no-capacity" ||
           message.reason === "unavailable"
         ) {
           setStatus("refused");
           setProblem(REFUSALS[message.reason]);
+          // The key in the address bar is why a reload keeps trying a room that will not
+          // have us. Refused is as final as leaving, so it goes the same way.
+          writeRoomToUrl(null);
           const abandoned = keyRef.current;
           if (abandoned !== null && message.reason !== "unavailable") forgetToken(abandoned);
           keyRef.current = null;
@@ -271,6 +295,7 @@ export function useRoom(
     const roomKey = keyRef.current;
     const token = tokenRef.current;
     if (roomKey !== null && token !== null) {
+      writeRoomToUrl(null);
       void fetch(`/api/rooms/${roomKey}/leave`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -402,7 +427,8 @@ export function useRoom(
     if (fromLink === null || fromLink === "") return;
     linkFollowed.current = true;
     joinRef.current(fromLink.toUpperCase());
-    // The key is left in the address bar deliberately, so a reload rejoins the same room.
+    // The key stays in the address bar while seated, written by `joined` above, so a reload
+    // rejoins. `leave` and a refusal both clear it.
   }, []);
 
   // Held so the link effect can run once and still reach the current `join`.

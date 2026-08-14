@@ -1731,6 +1731,40 @@ if (!hasRedis) {
         await new Promise((r) => setTimeout(r, 200));
       }
 
+      /*
+       * The address bar has to say which room you are in.
+       *
+       * It is what a reload reads. It used to be written only by whoever followed a shared
+       * link, which made two separate wrongs: creating a room lost it on reload, and
+       * leaving one put you back in it, because the key was still sitting in the URL.
+       */
+      const hostUrl = await host.page.evaluate(() => window.location.search);
+      check(
+        "creating a room puts it in the address bar",
+        hostUrl.includes(`room=${hosted.key}`),
+        hostUrl || "no query",
+      );
+
+      await guest.page.bringToFront();
+      const left = await guest.page.evaluate(async () => {
+        const trigger = [...document.querySelectorAll("button")].find((b) =>
+          (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+        );
+        trigger?.click();
+        await new Promise((r) => setTimeout(r, 400));
+        const leave = [...document.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Leave room",
+        );
+        leave?.click();
+        await new Promise((r) => setTimeout(r, 600));
+        return window.location.search;
+      });
+      check(
+        "leaving takes it back out",
+        !left.includes("room="),
+        left === "" ? "cleared" : left,
+      );
+
       // Leaving is the state the indicator exists for. Polling stops with the page, so the
       // seat goes stale and ages into `away` on its own.
       await guest.page.close();
