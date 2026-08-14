@@ -74,6 +74,17 @@
   --presence-gone: #c2c2c6;
 
   /*
+   * The one gradient in the product, on the one control that only appears when you have
+   * won something.
+   *
+   * Warm, because the board's own highlights are warm: the selected square and the last
+   * move are both sand rather than blue. A cool accent would be the only cold thing on the
+   * surface. It is spent here and nowhere else.
+   */
+  --share-from: #d9a441;
+  --share-to: #c06a3e;
+
+  /*
    * Durations. Board choreography needs a wider range than the two control durations,
    * which is a documented exception in CLAUDE.md.
    */
@@ -140,6 +151,10 @@
   --presence-here: #6bb98a;
   --presence-away: #d4ab5e;
   --presence-gone: #55555e;
+
+  /* Lifted, or the copper end disappears into a near-black surface. */
+  --share-from: #eabc63;
+  --share-to: #d98757;
 }
 
 @theme inline {
@@ -405,6 +420,17 @@ body {
     opacity: 1;
     scale: 1.3;
   }
+}
+
+/*
+ * The share icon, which is the only thing in the interface drawn in a gradient.
+ *
+ * Applied as a stroke rather than a fill because the icon set is drawn in strokes, and
+ * `url(#id)` on `stroke` is the only way to put a gradient on one. The gradient itself is
+ * defined once by the component and referenced here.
+ */
+.share-icon {
+  stroke: url(#share-accent);
 }
 
 /*
