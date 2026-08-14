@@ -258,7 +258,11 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
               looking at the picture and not part of sending it. The row is short on
               purpose: a long one turns two presses into a decision.
             */}
-            <fieldset className="mt-4 flex items-center justify-center gap-2">
+            {/*
+              Wraps, because the row is now long enough to run past a narrow dialog. Nine
+              swatches at this size are 316px and a phone leaves about 288.
+            */}
+            <fieldset className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <legend className="sr-only">Picture background</legend>
               {CARD_BACKGROUNDS.map((option) => {
                 const selected = option.id === background;

@@ -433,8 +433,33 @@ All colour lives in `globals.css`. Components never write a hex value or a palet
   --presence-here: …;   /* the opponent is connected */
   --presence-away: …;   /* seen recently, not now */
   --presence-gone: …;   /* a ring, drawn empty */
+  --share-from: …;      /* the camera's gradient, blue */
+  --share-to: …;        /* into emerald */
 }
 ```
+
+The shared picture carries its own set, and they are the only tokens here that do **not**
+move with the theme:
+
+```css
+:root {
+  --card-paper: …;  --card-sand: …;   --card-blush: …;
+  --card-sage: …;   --card-mist: …;   --card-lilac: …;
+  --card-slate: …;  --card-charcoal: …;
+  --card-ink-on-light: …;  --card-ink-soft-on-light: …;
+  --card-ink-on-dark: …;   --card-ink-soft-on-dark: …;
+}
+```
+
+A mount is chosen deliberately and travels with the image to wherever it is posted, so a
+picture someone made cream must not turn charcoal because they later switched the interface
+to dark. The text pair is picked from the mount's own lightness rather than stored beside
+each one, so the two cannot drift and a mount added later cannot arrive without legible
+text.
+
+Every tint sits far below the chroma of anything else in the product. A board built out of
+five greys mounts on these, and a saturated ground would take the picture over and leave
+the position as the second thing you notice.
 
 The piece tokens are keyed to the chess colour and never to who owns the piece. That was
 wrong once and produced a board where Black turned white in dark mode. Only the

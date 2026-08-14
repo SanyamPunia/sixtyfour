@@ -1,8 +1,8 @@
 /**
  * The backgrounds a player can mount the picture on.
  *
- * Small on purpose. A long swatch row turns a two-press action into a decision, and the
- * point of the picture is that it is already finished when it appears.
+ * Ordered warm to cool, with the two dark mounts last. The row is read left to right and a
+ * scale is easier to choose from than a scatter.
  *
  * No React and no hex here. The values are tokens, read from the document when the card is
  * drawn, so this list stays a list of names.
@@ -21,6 +21,10 @@ export const CARD_BACKGROUNDS: readonly CardBackground[] = [
   { id: "theme", label: "Match the app", token: null },
   { id: "paper", label: "Paper", token: "--card-paper" },
   { id: "sand", label: "Sand", token: "--card-sand" },
+  { id: "blush", label: "Blush", token: "--card-blush" },
+  { id: "sage", label: "Sage", token: "--card-sage" },
+  { id: "mist", label: "Mist", token: "--card-mist" },
+  { id: "lilac", label: "Lilac", token: "--card-lilac" },
   { id: "slate", label: "Slate", token: "--card-slate" },
   { id: "charcoal", label: "Charcoal", token: "--card-charcoal" },
 ];

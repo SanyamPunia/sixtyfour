@@ -95,9 +95,18 @@
    *
    * The board itself keeps the theme's square tones. A dark board mounted on cream reads
    * like a print rather than a mistake, and it is the reason to offer the choice at all.
+   *
+   * Every tint is far below the chroma of anything else in the product. A board built out
+   * of five greys sits on these, and a saturated mount would take the picture over and
+   * leave the position as the second thing you notice. They run warm to cool so the row
+   * reads as a scale rather than as a set of unrelated swatches.
    */
   --card-paper: #f5f4f1;
   --card-sand: #ece4d4;
+  --card-blush: #f3e8e6;
+  --card-sage: #e5ebe3;
+  --card-mist: #e6edf3;
+  --card-lilac: #eae8f4;
   --card-slate: #242731;
   --card-charcoal: #0c0c0e;
 
