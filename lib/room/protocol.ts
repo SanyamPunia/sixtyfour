@@ -86,7 +86,10 @@ export interface StateBody {
 
 export type RejectReason =
   | "not-found"
+  /** This room has both seats taken. */
   | "full"
+  /** Every room slot is in use. Nothing to do with the room being asked for. */
+  | "no-capacity"
   | "not-your-seat"
   | "not-your-turn"
   | "game-over"

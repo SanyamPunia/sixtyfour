@@ -47,6 +47,7 @@ function refuse(
 const STATUS: Record<RejectReason, number> = {
   "not-found": 404,
   full: 409,
+  "no-capacity": 503,
   "not-your-seat": 403,
   "not-your-turn": 409,
   "game-over": 409,
@@ -91,7 +92,9 @@ export async function handleCreate(
 ): Promise<ApiResult> {
   const prefer = preference(body);
   const result = await createRoom(store, { now, ...(prefer === undefined ? {} : { prefer }) });
-  if (!result.ok) return refuse(STATUS.full, "full");
+  // Not `full`. Nothing is wrong with any particular room, there is simply no slot left,
+  // and telling someone their room is full when they were trying to make one is a dead end.
+  if (!result.ok) return refuse(STATUS["no-capacity"], "no-capacity");
 
   return {
     status: 201,

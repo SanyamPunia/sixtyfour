@@ -78,11 +78,26 @@ describe("creating", () => {
     }
   });
 
-  test("the cap answers with a status a caller can act on", async () => {
+  test("running out of slots is not the same as a full room", async () => {
+    /*
+     * Two different dead ends that used to give the same answer. Being told "that room is
+     * full" while trying to create one names a room that does not exist and suggests
+     * finding another, when the truth is that the service has no capacity and waiting is
+     * the only thing that helps.
+     */
     for (let i = 0; i < ROOM_CAP; i++) await handleCreate(store, {}, NOW);
     const over = await handleCreate(store, {}, NOW);
-    assert.equal(over.status, 409);
-    assert.equal((over.body as RejectedBody).reason, "full");
+    assert.equal(over.status, 503, "capacity is a server condition, not a conflict");
+    assert.equal((over.body as RejectedBody).reason, "no-capacity");
+
+    // A genuinely full room still reports itself as full. Its own store, because the one
+    // above has no slots left to make a room in.
+    const roomy = new MemoryRoomStore();
+    const host = (await handleCreate(roomy, { prefer: "white" }, NOW)).body as JoinedBody;
+    await handleJoin(roomy, host.room.key, {}, NOW);
+    const third = await handleJoin(roomy, host.room.key, {}, NOW);
+    assert.equal(third.status, 409);
+    assert.equal((third.body as RejectedBody).reason, "full");
   });
 });
 
