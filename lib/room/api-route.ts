@@ -42,25 +42,63 @@ function refused(status: number, reason: string): Response {
  * because "there is nothing to steal" is a property of today's routes rather than a rule
  * anyone will remember when adding tomorrow's.
  */
-function sameOrigin(request: Request): boolean {
+export function sameOrigin(request: Request): boolean {
   const site = request.headers.get("sec-fetch-site");
   if (site === null) return true;
   return site === "same-origin" || site === "none";
 }
 
 /**
- * Reads a JSON body, refusing anything oversized.
+ * Reads a JSON body, refusing anything oversized before it is in memory.
+ *
+ * The size is counted as the stream arrives and the read is abandoned the moment it goes
+ * over. Reading the whole body first and measuring it afterwards is not a limit at all: by
+ * the time the number is known the bytes have already been accepted, which is the one thing
+ * the limit exists to prevent.
+ *
+ * `Content-Length` is checked first as a courtesy to honest clients, and is not trusted:
+ * it is absent on a chunked body and can simply be a lie.
  *
  * The content type is required rather than sniffed. A cross-site `fetch` that sets it
  * triggers a preflight, which these routes do not answer, so insisting on it is a second
  * lock on the same door as the origin check.
  */
-async function readBody(request: Request): Promise<unknown | null> {
+export async function readBody(request: Request): Promise<unknown | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.includes("application/json")) return null;
-  const raw = await request.text();
-  if (raw.length > MAX_BODY) return null;
-  if (raw === "") return {};
+
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_BODY) return null;
+
+  const body = request.body;
+  if (body === null) return {};
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+
+  const merged = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const raw = new TextDecoder().decode(merged);
+  if (raw.trim() === "") return {};
   try {
     return JSON.parse(raw);
   } catch {
