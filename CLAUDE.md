@@ -176,6 +176,8 @@ lib/
   game/                 reducer and piece identity. Pure, so node --test can reach it
   bot/                  pure search plus the worker entry. No React
   room/                 every rule a room has, plus the wire types both sides import
+  share/                the picture a finished game produces. No React
+  pieces.ts             the six glyphs as path data, used by the board and the picture
   squircle.ts           continuous-corner path generator
   utils.ts              cn()
 scripts/
@@ -195,6 +197,17 @@ mismatch is reported rather than guessed at.
 calls one handler, and returns the result. Everything that could be wrong lives in
 `handlers.ts`, so the whole API is covered by `node --test` with no server booted. If a rule
 ever needs adding it goes in `service.ts`, not in either of them.
+
+**The piece paths live in `lib/pieces.ts`, not in the component that draws them.** The
+shared image redraws the board from the same data, and a second copy would drift. The drift
+would only show up in something a player had already posted somewhere.
+
+**`lib/share/` builds the picture rather than screenshotting the page.** A screenshot
+carries hover states, the cursor, and whatever size the viewport happened to be. `card.ts`
+emits an SVG at a fixed size and `render.ts` rasterises it, then draws the caption onto the
+canvas afterwards: an SVG rasterised through an `Image` gets no access to the page's fonts,
+so text inside it comes out in a system serif. Colours are read from the live tokens at draw
+time, so the picture follows the theme.
 
 **Nothing outside `lib/room/redis-store.ts` builds a store.** `sharedRoomStore()` is a
 module-level singleton, because route handlers are called rather than started and there is

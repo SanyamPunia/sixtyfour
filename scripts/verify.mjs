@@ -1357,20 +1357,195 @@ if (!hasRedis) {
         }
       }
 
+      /*
+       * A finished game, and the picture it produces.
+       *
+       * Fool's mate, by clicking exact squares rather than whatever move the board offers
+       * first, because the share card only exists once there is a result and this is the
+       * shortest deterministic way to one. 0x88 indices: rank * 16 + file.
+       */
+      /*
+       * Retried while the page is in front, rather than waited on from behind.
+       *
+       * A backgrounded tab stops polling on purpose, so the other board does not learn it
+       * is its turn until it is looked at again. Bringing the page forward and trying until
+       * the move lands is the same thing a person does, and it is the only version of this
+       * that is not a race against a poll interval.
+       */
+      const play = async (page, from, to) => {
+        await page.bringToFront();
+        for (let attempt = 0; attempt < 14; attempt++) {
+          const landed = await page.evaluate(
+            async (a, b) => {
+              const settle = () => new Promise((r) => setTimeout(r, 60));
+              const square = (n) => document.querySelector(`[data-sq="${n}"]`);
+              square(a)?.click();
+              await settle();
+              square(b)?.click();
+              await settle();
+              return (square(b)?.getAttribute("aria-label") ?? "").includes("your ");
+            },
+            from,
+            to,
+          );
+          if (landed) return true;
+          await new Promise((r) => setTimeout(r, 800));
+        }
+        return false;
+      };
+
+      const white = hosted.seat === "white" ? host : guest;
+      const black = hosted.seat === "white" ? guest : host;
+      const mate = [
+        [white, 21, 37],
+        [black, 100, 68],
+        [white, 22, 54],
+        [black, 115, 55],
+      ];
+      let played = 0;
+      for (const [who, from, to] of mate) {
+        if (await play(who.page, from, to)) played += 1;
+      }
+      check("a full game can be played out", played === 4, `${played} of 4 moves landed`);
+
+      // Brought forward first, because a backgrounded page has stopped asking and so does
+      // not yet know it has been mated.
+      await white.page.bringToFront();
+      const finished = await white.page
+        .waitForFunction(
+          () => document.body.innerText.replace(/\s+/g, " ").toLowerCase().includes("you lose"),
+          { timeout: 15000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+      check("the mated player is told they lost", finished);
+
+      const winner = black;
+      await winner.page.bringToFront();
+      const shareOpened = await winner.page
+        .evaluate(() => {
+          const button = document.querySelector('button[aria-label="Share this game"]');
+          if (button === null) return false;
+          button.click();
+          return true;
+        })
+        .catch(() => false);
+      check("a finished game offers a picture of itself", shareOpened);
+
+      if (shareOpened) {
+        const image = await winner.page
+          .waitForFunction(
+            () => {
+              const img = document.querySelector('[role="dialog"] img');
+              return img !== null && img.naturalWidth > 0
+                ? { w: img.naturalWidth, h: img.naturalHeight, src: img.src.slice(0, 5) }
+                : false;
+            },
+            { timeout: 15000 },
+          )
+          .then((h) => h.jsonValue())
+          .catch(() => null);
+
+        check(
+          "the picture renders at the size it claims",
+          image !== null && image.w === 1080 && image.h === 1080,
+          image === null ? "never rendered" : `${image.w}x${image.h}`,
+        );
+        check(
+          "it is a real image and not a data string in the markup",
+          image !== null && image.src === "blob:",
+          image?.src ?? "",
+        );
+
+        // The board is drawn again rather than screenshotted, so the pieces have to have
+        // actually made it into the canvas. A blank card is the failure worth catching.
+        const ink = await winner.page.evaluate(async () => {
+          const img = document.querySelector('[role="dialog"] img');
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const seen = new Set();
+          for (let i = 0; i < data.length; i += 4 * 97) {
+            seen.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+          }
+          return seen.size;
+        });
+        check("the picture has a board in it", ink > 4, `${ink} distinct colours sampled`);
+
+        /*
+         * The same card in the other theme.
+         *
+         * The card reads the colour tokens when it draws rather than baking them in, so
+         * this is the check that the picture follows the theme the player is looking at
+         * instead of shipping a light board to someone on a dark screen. Re-opening after
+         * flipping the attribute is the entire difference.
+         */
+        const cornerOf = async () => {
+          await winner.page.waitForFunction(
+            () => {
+              const img = document.querySelector('[role="dialog"] img');
+              return img !== null && img.naturalWidth > 0;
+            },
+            { timeout: 15000 },
+          );
+          return await winner.page.evaluate(async () => {
+            const img = document.querySelector('[role="dialog"] img');
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            const [r, g, b] = ctx.getImageData(4, 4, 1, 1).data;
+            return Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+          });
+        };
+
+        const lightCorner = await cornerOf();
+        await winner.page.keyboard.press("Escape");
+        await new Promise((r) => setTimeout(r, 250));
+
+        await winner.page.evaluate(() => {
+          document.documentElement.dataset.theme = "dark";
+        });
+        await new Promise((r) => setTimeout(r, 250));
+        await winner.page.evaluate(() => {
+          document.querySelector('button[aria-label="Share this game"]')?.click();
+        });
+        const darkCorner = await cornerOf().catch(() => null);
+
+        check(
+          "the picture follows the theme",
+          darkCorner !== null && lightCorner > 200 && darkCorner < 60,
+          `background was ${lightCorner} in light and ${darkCorner} in dark`,
+        );
+
+        await winner.page.keyboard.press("Escape");
+        await winner.page.evaluate(() => {
+          document.documentElement.dataset.theme = "light";
+        });
+        await new Promise((r) => setTimeout(r, 200));
+      }
+
       // Leaving is the state the indicator exists for. Polling stops with the page, so the
       // seat goes stale and ages into `away` on its own.
       await guest.page.close();
       await host.page.bringToFront();
+      // Read from the dot on the room control rather than the status line. Once a game is
+      // over the status line correctly shows the result instead, so the words are gone and
+      // this indicator is the only thing still reporting presence.
       const noticed = await host.page
         .waitForFunction(
-          // Whitespace is normalised because the morphing text emits non-breaking spaces,
-          // so a plain `includes("opponent away")` never matches. `\s` covers U+00A0.
-          () =>
-            document.body.innerText
-              .replace(/\s+/g, " ")
-              .toLowerCase()
-              .includes("opponent away"),
-          { timeout: 30000 },
+          () => {
+            const trigger = [...document.querySelectorAll("button")].find((b) =>
+              (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+            );
+            const dot = trigger?.querySelector("[data-presence]");
+            return dot != null && dot.getAttribute("data-presence") !== "here";
+          },
+          { timeout: 40000 },
         )
         .then(() => true)
         .catch(() => false);
