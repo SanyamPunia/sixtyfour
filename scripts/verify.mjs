@@ -1225,7 +1225,7 @@ if (!hasRedis) {
   // Created through the interface rather than by calling the route, so the button, the
   // dialog and the hook are all part of what is being checked.
   await host.page.evaluate(() => {
-    document.querySelector('button[aria-label="Play a friend"]')?.click();
+    document.querySelector('button[aria-label="Play with a friend"]')?.click();
   });
   await host.page.waitForSelector("[data-room-key], form", { timeout: 8000 });
   await host.page.evaluate(() => {

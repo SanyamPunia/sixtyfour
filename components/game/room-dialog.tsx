@@ -83,7 +83,7 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
           )}
         >
           <Dialog.Title className="text-sm font-semibold">
-            {inside ? "Your room" : "Play a friend"}
+            {inside ? "Your room" : "Play with a friend"}
           </Dialog.Title>
           <Dialog.Description className="mt-1.5 text-sm text-[var(--ink-soft)]">
             {inside

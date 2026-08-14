@@ -27,9 +27,9 @@ export function RoomButton({ room, controls }: RoomButtonProps) {
 
   return (
     <>
-      <Tooltip label={inside ? `Room ${room.key}` : "Play a friend"}>
+      <Tooltip label={inside ? `Room ${room.key}` : "Play with a friend"}>
         <Button
-          aria-label={inside ? `Room ${room.key}` : "Play a friend"}
+          aria-label={inside ? `Room ${room.key}` : "Play with a friend"}
           aria-expanded={open}
           className="relative"
           onClick={() => setOpen(true)}
