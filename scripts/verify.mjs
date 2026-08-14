@@ -1552,6 +1552,63 @@ if (!hasRedis) {
           writeFileSync(`${OUT}/card-light.png`, Buffer.from(png, "base64"));
         }
 
+        /*
+         * The background choices, which are the one part of the picture the player decides.
+         *
+         * Checked for the thing that would actually ruin a shared image: a caption drawn in
+         * the theme's text colour onto a background the theme knows nothing about. The ink
+         * is derived from the chosen colour, so a light mount has to come back with dark
+         * text whatever the interface is set to.
+         */
+        const swatches = await winner.page.$$('fieldset input[type="radio"]');
+        check(
+          "the picture offers a set of backgrounds",
+          swatches.length >= 4,
+          `${swatches.length} offered`,
+        );
+
+        const sample = async () => {
+          await winner.page.waitForFunction(
+            () => {
+              const img = document.querySelector('[role="dialog"] img');
+              return img !== null && img.naturalWidth > 0;
+            },
+            { timeout: 15000 },
+          );
+          return await winner.page.evaluate(() => {
+            const img = document.querySelector('[role="dialog"] img');
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            const lum = (x, y) => {
+              const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+              return Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+            };
+            // The background, and the darkest pixel across the caption's band.
+            let darkest = 255;
+            for (let x = canvas.width * 0.3; x < canvas.width * 0.7; x += 3) {
+              darkest = Math.min(darkest, lum(Math.round(x), canvas.height - 105));
+            }
+            return { background: lum(6, 6), captionInk: darkest };
+          });
+        };
+
+        // "Paper" is second in the row, and is light in either theme.
+        if (swatches.length > 1) {
+          await swatches[1].click();
+          await new Promise((r) => setTimeout(r, 700));
+          const paper = await sample();
+          check(
+            "a light background comes back with dark text",
+            paper.background > 200 && paper.captionInk < 120,
+            `background ${paper.background}, darkest caption pixel ${paper.captionInk}`,
+          );
+          await swatches[0].click();
+          await new Promise((r) => setTimeout(r, 700));
+        }
+
         const light = await cornerOf();
         const lightCorner = light.corner;
         check(
