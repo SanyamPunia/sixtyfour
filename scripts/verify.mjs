@@ -1507,6 +1507,33 @@ if (!hasRedis) {
         check("the picture has a board in it", ink > 4, `${ink} distinct colours sampled`);
 
         /*
+         * Opening shows the picture, with nothing in between.
+         *
+         * It is drawn when the game ends rather than when the dialog opens, so there is
+         * never a skeleton, never an empty box while a bitmap decodes, and nothing to
+         * animate through. This samples every frame of an open to prove that.
+         */
+        await winner.page.keyboard.press("Escape");
+        await new Promise((r) => setTimeout(r, 400));
+        const frames = await winner.page.evaluate(async () => {
+          document.querySelector('button[aria-label="Share this game"]')?.click();
+          const seen = [];
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 25));
+            const dialog = document.querySelector('[role="dialog"]');
+            if (dialog === null) continue;
+            const img = dialog.querySelector("img");
+            seen.push(img === null ? "empty" : img.naturalWidth > 0 ? "picture" : "blank");
+          }
+          return seen;
+        });
+        check(
+          "opening goes straight to the picture",
+          frames.length > 0 && frames.every((f) => f === "picture"),
+          `saw ${[...new Set(frames)].join(", ")}`,
+        );
+
+        /*
          * The same card in the other theme.
          *
          * The card reads the colour tokens when it draws rather than baking them in, so
@@ -1597,7 +1624,34 @@ if (!hasRedis) {
 
         // "Paper" is second in the row, and is light in either theme.
         if (swatches.length > 1) {
-          await swatches[1].click();
+          /*
+           * The picture must not disappear while the new one is drawn.
+           *
+           * Clearing it first collapsed the preview to a zero-height skeleton and made the
+           * dialog jump on every press. Sampled across the switch rather than after it,
+           * because after it everything looks fine either way.
+           */
+          const heights = await winner.page.evaluate(async () => {
+            const box = () => {
+              const frame = document.querySelector('[role="dialog"] img')?.parentElement;
+              return frame === null || frame === undefined
+                ? 0
+                : Math.round(frame.getBoundingClientRect().height);
+            };
+            const before = box();
+            const seen = [before];
+            document.querySelectorAll('fieldset input[type="radio"]')[1]?.click();
+            for (let i = 0; i < 24; i++) {
+              await new Promise((r) => setTimeout(r, 25));
+              seen.push(box());
+            }
+            return { before, min: Math.min(...seen) };
+          });
+          check(
+            "the picture does not collapse while a background is applied",
+            heights.before > 0 && heights.min >= heights.before - 2,
+            `was ${heights.before}px, dropped to ${heights.min}px`,
+          );
           await new Promise((r) => setTimeout(r, 700));
           const paper = await sample();
           check(
@@ -1626,8 +1680,30 @@ if (!hasRedis) {
         await winner.page.evaluate(() => {
           document.querySelector('button[aria-label="Share this game"]')?.click();
         });
-        const darkCorner = await cornerOf()
-          .then((c) => c.corner)
+        // The redraw is asynchronous and the bitmap is decoded off the main thread, so the
+        // picture on screen is still the previous one for a moment after the theme changes.
+        await new Promise((r) => setTimeout(r, 1200));
+
+        // The redraw keeps the previous picture up until the new one is decoded, so this
+        // waits for the value to change rather than for an element to exist.
+        const darkCorner = await winner.page
+          .waitForFunction(
+            (wasLight) => {
+              const img = document.querySelector('[role="dialog"] img');
+              if (img === null || img.naturalWidth === 0) return false;
+              const canvas = document.createElement("canvas");
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(img, 0, 0);
+              const [r, g, b] = ctx.getImageData(4, 4, 1, 1).data;
+              const lum = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+              return Math.abs(lum - wasLight) > 40 ? lum : false;
+            },
+            { timeout: 15000 },
+            lightCorner,
+          )
+          .then((h) => h.jsonValue())
           .catch(() => null);
 
         if (wantShots && darkCorner !== null) {

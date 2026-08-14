@@ -77,12 +77,14 @@
    * The one gradient in the product, on the one control that only appears when you have
    * won something.
    *
-   * Warm, because the board's own highlights are warm: the selected square and the last
-   * move are both sand rather than blue. A cool accent would be the only cold thing on the
-   * surface. It is spent here and nowhere else.
+   * Cool, and deliberately unlike everything else on the surface. The board's own
+   * highlights are warm sand, so a warm accent here sat in the same family as the last-move
+   * tint and read as another piece of board state rather than as an action. Blue into
+   * emerald belongs to nothing else on the page, which is what makes it read as a
+   * highlight. It is spent here and nowhere else.
    */
-  --share-from: #d9a441;
-  --share-to: #c06a3e;
+  --share-from: #4b8fd6;
+  --share-to: #3fb08a;
 
   /*
    * Backgrounds a player can pick for the shared picture.
@@ -173,9 +175,9 @@
   --presence-away: #d4ab5e;
   --presence-gone: #55555e;
 
-  /* Lifted, or the copper end disappears into a near-black surface. */
-  --share-from: #eabc63;
-  --share-to: #d98757;
+  /* Lifted, or both ends sink into a near-black surface. */
+  --share-from: #6aa9e6;
+  --share-to: #52c79c;
 }
 
 @theme inline {

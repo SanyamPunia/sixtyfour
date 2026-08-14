@@ -8,7 +8,7 @@ import { TextMorph } from "@/components/ui/text-morph.tsx";
 import { Tooltip } from "@/components/ui/tooltip.tsx";
 import type { GameState } from "@/lib/game/reducer.ts";
 import { matedKingSquare, resultLabel } from "@/lib/game/reducer.ts";
-import { cardFilename } from "@/lib/share/card.ts";
+import { CARD_HEIGHT, CARD_WIDTH, cardFilename } from "@/lib/share/card.ts";
 import { CARD_BACKGROUNDS, DEFAULT_BACKGROUND } from "@/lib/share/palette.ts";
 import {
   backgroundSwatch,
@@ -44,21 +44,47 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
   // Kept for as long as the dialog is mounted, so trying a few and going back to the first
   // does not fight you. It deliberately does not persist: it belongs to this picture.
   const [background, setBackground] = useState(DEFAULT_BACKGROUND);
+  /*
+   * The theme, watched rather than read once.
+   *
+   * The picture takes its colours from the tokens when it draws, so a theme toggle changes
+   * what it should look like. Nothing in React re-renders on an attribute changing on the
+   * root element, so without this the card silently keeps the colours of whichever theme
+   * was current when the game ended.
+   */
+  const [theme, setTheme] = useState("");
+
+  useEffect(() => {
+    const read = () => setTheme(document.documentElement.dataset.theme ?? "light");
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
   const blobRef = useRef<Blob | null>(null);
   const urlRef = useRef<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** What the picture currently on screen was drawn from, so it is not drawn again. */
+  const signatureRef = useRef<string | null>(null);
+  const gameRef = useRef<string | null>(null);
 
   const result = resultLabel(state);
   const [swatches, setSwatches] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (!open) return;
-    // Read on opening rather than while rendering. There is no computed style on the
-    // server, and the tokens can change under a theme toggle while the page is alive.
+    if (result === null) return;
+    // Read in an effect rather than while rendering. There is no computed style on the
+    // server, and the tokens change under a theme toggle while the page is alive.
     const next: Record<string, string> = {};
     for (const option of CARD_BACKGROUNDS) next[option.id] = backgroundSwatch(option.id);
     setSwatches(next);
-  }, [open]);
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the fills are read out of the
+    // document rather than passed in, so the theme is a real input to this even though
+    // nothing here mentions it. The first swatch follows the interface and has to move with it.
+  }, [result, theme]);
 
   const release = useCallback(() => {
     if (urlRef.current !== null) URL.revokeObjectURL(urlRef.current);
@@ -72,14 +98,35 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
     };
   }, [release]);
 
+  /*
+   * Drawn once per distinct picture, and shown only when it can actually paint.
+   *
+   * Three things were going wrong at once. Clearing the preview on close emptied the dialog
+   * while it was still animating shut, so the picture vanished and then the box collapsed
+   * after it. Re-opening redrew a picture that had not changed, for no reason. And setting
+   * the source before the bitmap was decoded gave a frame of empty box between the skeleton
+   * and the image, which read as a third state.
+   *
+   * So the picture is prepared as soon as a game has a result, not when the dialog opens.
+   * By the time anyone reaches the button it is already drawn and decoded, so opening shows
+   * it, closing keeps it, and changing the background swaps it in place. There is no state
+   * between those to see.
+   */
   useEffect(() => {
-    if (!open || result === null) return;
+    if (result === null) return;
+
+    const game = `${result}|${state.history.length}|${state.position.hash}|${flipped}`;
+    const signature = `${game}|${background}|${theme}`;
+    if (signature === signatureRef.current && urlRef.current !== null) return;
+
+    // Only a different game invalidates what is already up. A background or a theme is a
+    // redraw of the same picture, and holding the old one until the new one lands is what
+    // keeps the switch from flashing.
+    if (gameRef.current !== null && gameRef.current !== game) setPreview(null);
+    gameRef.current = game;
+
     let cancelled = false;
     setProblem(null);
-    // Cleared before drawing, so the dialog never shows the previous card while the new one
-    // is still being made. That stale frame is what a re-open after a theme change or a
-    // rematch would otherwise show, and it looks like the feature simply ignored both.
-    setPreview(null);
 
     void (async () => {
       try {
@@ -94,10 +141,23 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
           moveCount: state.history.length,
         });
         if (cancelled) return;
+
+        const url = URL.createObjectURL(blob);
+        // Decoded here rather than by the browser after React mounts the element, so the
+        // picture is painted on the frame it appears on instead of one after it.
+        const decoded = new Image();
+        decoded.src = url;
+        await decoded.decode().catch(() => {});
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+
         blobRef.current = blob;
         release();
-        urlRef.current = URL.createObjectURL(blob);
-        setPreview(urlRef.current);
+        urlRef.current = url;
+        signatureRef.current = signature;
+        setPreview(url);
       } catch {
         if (!cancelled) setProblem("The image could not be drawn.");
       }
@@ -106,7 +166,7 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
     return () => {
       cancelled = true;
     };
-  }, [open, result, state, flipped, background, release]);
+  }, [result, state, flipped, background, theme, release]);
 
   const onCopy = async (): Promise<void> => {
     const blob = blobRef.current;
@@ -172,7 +232,12 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
             <div className="mt-5 overflow-hidden rounded-xl ring-1 ring-[var(--board-dark)]">
               {preview === null ? (
                 // Shaped like the image that is arriving, rather than a word saying so.
-                <div className="aspect-[1080/1160] w-full animate-pulse bg-[var(--board-dark)]" />
+                // The ratio is inline: it holds the dialog's height open before there is
+                // anything to measure, so it must not depend on a class being generated.
+                <div
+                  className="w-full animate-pulse bg-[var(--board-dark)]"
+                  style={{ aspectRatio: `${CARD_WIDTH} / ${CARD_HEIGHT}` }}
+                />
               ) : (
                 <img
                   src={preview}
