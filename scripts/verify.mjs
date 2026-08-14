@@ -11,7 +11,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import puppeteer from "puppeteer-core";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -1432,6 +1432,37 @@ if (!hasRedis) {
         .catch(() => false);
       check("a finished game offers a picture of itself", shareOpened);
 
+      /*
+       * The one gradient in the interface, checked because it fails silently.
+       *
+       * `stroke: url(#id)` renders as nothing at all when the referenced gradient is not in
+       * the document, so a broken reference gives an invisible icon rather than a grey one.
+       */
+      const accent = await winner.page.evaluate(() => {
+        const icon = document.querySelector('button[aria-label="Share this game"] svg');
+        const gradient = document.getElementById("share-accent");
+        const stops = gradient
+          ? [...gradient.querySelectorAll("stop")].map((s) =>
+              getComputedStyle(s).stopColor.trim(),
+            )
+          : [];
+        return {
+          stroke: icon === null ? "" : getComputedStyle(icon).stroke,
+          defined: gradient !== null,
+          stops,
+        };
+      });
+      check(
+        "the share icon is drawn in the gradient",
+        accent.defined && accent.stroke.includes("share-accent"),
+        `stroke ${accent.stroke}`,
+      );
+      check(
+        "the gradient resolves to two real colours",
+        accent.stops.length === 2 && accent.stops.every((c) => c !== "" && c !== "none"),
+        accent.stops.join(" to "),
+      );
+
       if (shareOpened) {
         const image = await winner.page
           .waitForFunction(
@@ -1448,7 +1479,7 @@ if (!hasRedis) {
 
         check(
           "the picture renders at the size it claims",
-          image !== null && image.w === 1080 && image.h === 1080,
+          image !== null && image.w === 1080 && image.h === 1160,
           image === null ? "never rendered" : `${image.w}x${image.h}`,
         );
         check(
@@ -1499,11 +1530,35 @@ if (!hasRedis) {
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0);
             const [r, g, b] = ctx.getImageData(4, 4, 1, 1).data;
-            return Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+            // Sampled at the very bottom too. The caption used to sit on the edge, so this
+            // is the check that there is still card under it.
+            const low = ctx.getImageData(canvas.width / 2, canvas.height - 6, 1, 1).data;
+            return {
+              corner: Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b),
+              belowCaption: Math.round(0.2126 * low[0] + 0.7152 * low[1] + 0.0722 * low[2]),
+            };
           });
         };
 
-        const lightCorner = await cornerOf();
+        if (wantShots) {
+          const png = await winner.page.evaluate(async () => {
+            const img = document.querySelector('[role="dialog"] img');
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext("2d").drawImage(img, 0, 0);
+            return canvas.toDataURL("image/png").split(",")[1];
+          });
+          writeFileSync(`${OUT}/card-light.png`, Buffer.from(png, "base64"));
+        }
+
+        const light = await cornerOf();
+        const lightCorner = light.corner;
+        check(
+          "the caption is not sitting on the bottom edge",
+          Math.abs(light.belowCaption - light.corner) < 6,
+          `corner ${light.corner}, below the text ${light.belowCaption}`,
+        );
         await winner.page.keyboard.press("Escape");
         await new Promise((r) => setTimeout(r, 250));
 
@@ -1514,7 +1569,21 @@ if (!hasRedis) {
         await winner.page.evaluate(() => {
           document.querySelector('button[aria-label="Share this game"]')?.click();
         });
-        const darkCorner = await cornerOf().catch(() => null);
+        const darkCorner = await cornerOf()
+          .then((c) => c.corner)
+          .catch(() => null);
+
+        if (wantShots && darkCorner !== null) {
+          const png = await winner.page.evaluate(async () => {
+            const img = document.querySelector('[role="dialog"] img');
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext("2d").drawImage(img, 0, 0);
+            return canvas.toDataURL("image/png").split(",")[1];
+          });
+          writeFileSync(`${OUT}/card-dark.png`, Buffer.from(png, "base64"));
+        }
 
         check(
           "the picture follows the theme",
