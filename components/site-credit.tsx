@@ -6,10 +6,16 @@
  * every game element in the visual order, where a credit belongs.
  */
 
-/** X's logo, a trademark of X Corp, used here to point at a profile. */
+/**
+ * X's logo, a trademark of X Corp, used here to point at a profile.
+ *
+ * Set to the same 12px as the text beside it rather than the 14px an icon usually takes.
+ * The mark is a solid diagonal cross with no counters, so it carries far more ink than a
+ * letterform of the same box and reads a size larger than whatever it sits next to.
+ */
 function XLogo() {
   return (
-    <svg viewBox="0 0 1200 1227" aria-hidden="true" className="size-3.5" fill="currentColor">
+    <svg viewBox="0 0 1200 1227" aria-hidden="true" className="size-3" fill="currentColor">
       <path d="M714.163 519.284 1160.89 0h-105.86L667.137 450.887 357.328 0H0l468.492 681.821L0 1226.37h105.866l409.625-476.152 327.181 476.152H1200L714.137 519.284h.026ZM569.165 687.828l-47.468-67.894-377.686-540.24h162.604l304.797 435.991 47.468 67.894 396.2 566.721H892.476L569.165 687.854v-.026Z" />
     </svg>
   );
