@@ -11,10 +11,11 @@ import { WHITE } from "../chess/types.ts";
 import type { CardColors, CardInput } from "./card.ts";
 import {
   BOARD_TOP,
-  CAPTION_TOP,
+  CAPTION_BASELINE,
   CARD_BOARD_SIZE,
+  CARD_HEIGHT,
   CARD_PADDING,
-  CARD_SIZE,
+  CARD_WIDTH,
   cardSvg,
 } from "./card.ts";
 
@@ -71,13 +72,13 @@ export interface RenderInput extends CardInput {
 export async function renderCard(input: RenderInput): Promise<Blob> {
   const colors = input.colors as CardColors & { ink: string; inkSoft: string; surface: string };
   const canvas = document.createElement("canvas");
-  canvas.width = CARD_SIZE;
-  canvas.height = CARD_SIZE;
+  canvas.width = CARD_WIDTH;
+  canvas.height = CARD_HEIGHT;
   const context = canvas.getContext("2d");
   if (context === null) throw new Error("no 2d context");
 
   context.fillStyle = colors.surface;
-  context.fillRect(0, 0, CARD_SIZE, CARD_SIZE);
+  context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
   const board = await loadSvg(cardSvg(input));
   context.drawImage(board, CARD_PADDING, BOARD_TOP, CARD_BOARD_SIZE, CARD_BOARD_SIZE);
@@ -88,18 +89,47 @@ export async function renderCard(input: RenderInput): Promise<Blob> {
 
   const sans = getComputedStyle(document.body).fontFamily || "system-ui, sans-serif";
   context.textBaseline = "alphabetic";
-
-  context.font = `500 40px ${sans}`;
-  context.fillStyle = colors.ink;
   context.textAlign = "left";
-  context.fillText(input.result.toLowerCase(), CARD_PADDING, CAPTION_TOP);
 
+  /*
+   * One centred row, the way the status line above the board already reads.
+   *
+   * Separated by drawn dots rather than by commas or middots, which is the same rule the
+   * interface follows for a metadata row. A comma between "black" and "80 moves" would also
+   * collide with the commas some of the result labels already contain.
+   */
+  const meta = `${input.moveCount} ${input.moveCount === 1 ? "move" : "moves"}`;
   const side = input.humanColor === WHITE ? "white" : "black";
-  const moves = `${input.moveCount} ${input.moveCount === 1 ? "move" : "moves"}`;
-  context.font = `400 28px ${sans}`;
-  context.fillStyle = colors.inkSoft;
-  context.textAlign = "right";
-  context.fillText(`${side}, ${moves}`, CARD_SIZE - CARD_PADDING, CAPTION_TOP);
+  const parts = [
+    { text: input.result.toLowerCase(), font: `500 42px ${sans}`, fill: colors.ink },
+    { text: side, font: `400 26px ${sans}`, fill: colors.inkSoft },
+    { text: meta, font: `400 26px ${sans}`, fill: colors.inkSoft },
+  ];
+
+  const DOT = 3;
+  const DOT_GAP = 15;
+  const widths = parts.map((part) => {
+    context.font = part.font;
+    return context.measureText(part.text).width;
+  });
+  const spacing = (parts.length - 1) * (DOT_GAP * 2 + DOT * 2);
+  const total = widths.reduce((sum, width) => sum + width, 0) + spacing;
+
+  let x = (CARD_WIDTH - total) / 2;
+  parts.forEach((part, index) => {
+    context.font = part.font;
+    context.fillStyle = part.fill;
+    context.fillText(part.text, x, CAPTION_BASELINE);
+    x += widths[index] as number;
+    if (index === parts.length - 1) return;
+    // Sat on the smaller text's optical middle rather than the shared baseline, so it reads
+    // as a separator between the two rather than as punctuation hanging off the first.
+    context.beginPath();
+    context.arc(x + DOT_GAP + DOT, CAPTION_BASELINE - 8, DOT, 0, Math.PI * 2);
+    context.fillStyle = colors.inkSoft;
+    context.fill();
+    x += DOT_GAP * 2 + DOT * 2;
+  });
 
   return await new Promise((resolve, reject) => {
     // `toBlob` rather than `toDataURL`, which builds a very large string to throw away.

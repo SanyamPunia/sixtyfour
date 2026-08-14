@@ -16,15 +16,24 @@ import { columnOf, rowOf } from "../game/piece-state.ts";
 import { PIECE_BODY, PIECE_MARKS, PIECE_VIEWBOX } from "../pieces.ts";
 import { squirclePath } from "../squircle.ts";
 
-/** Square, because the board is. Large enough to stay sharp when a platform re-encodes it. */
-export const CARD_SIZE = 1080;
+/*
+ * Taller than it is wide, by exactly the band the caption needs.
+ *
+ * A square card cannot hold a caption and still have equal margins: the board would have to
+ * shrink away from the sides to make room, and then the picture is a small board floating in
+ * a big frame. Adding the height instead keeps one margin all the way round and gives the
+ * text its own band, rather than leaving it pressed against the bottom edge.
+ *
+ * 96 above the board, 96 either side, and 96 below the text's descenders.
+ */
+export const CARD_WIDTH = 1080;
+export const CARD_HEIGHT = 1160;
 const PADDING = 96;
-const BOARD = CARD_SIZE - PADDING * 2;
+const BOARD = CARD_WIDTH - PADDING * 2;
 const CELL = BOARD / 8;
 
-/** Room under the board for one line of text, and nothing else. */
 export const BOARD_TOP = PADDING;
-export const CAPTION_TOP = PADDING + BOARD + 74;
+export const CAPTION_BASELINE = 1055;
 
 export interface CardColors {
   surface: string;
@@ -84,8 +93,9 @@ export function cardSvg(input: CardInput): string {
   if (input.matedKing !== null) tint(input.matedKing, colors.check);
   parts.push(`</g>`);
 
-  // The same inset the board uses, so a piece sits in its square rather than filling it.
-  const inset = CELL * 0.08;
+  // Six percent, which is what `.piece-body` uses on screen. A different number here makes
+  // the exported pieces quietly a different size from the ones the player was looking at.
+  const inset = CELL * 0.06;
   const glyph = CELL - inset * 2;
   const scale = glyph / PIECE_VIEWBOX;
 

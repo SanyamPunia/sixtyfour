@@ -110,9 +110,23 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
 
   return (
     <>
+      {/*
+        The gradient itself, defined once and referenced by the stroke.
+        Zero-sized and hidden, because it is a definition rather than a drawing.
+      */}
+      <svg width="0" height="0" aria-hidden="true" focusable="false" className="absolute">
+        <title>Share accent</title>
+        <defs>
+          <linearGradient id="share-accent" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--share-from)" />
+            <stop offset="100%" stopColor="var(--share-to)" />
+          </linearGradient>
+        </defs>
+      </svg>
+
       <Tooltip label="Share this game">
         <Button aria-label="Share this game" aria-expanded={open} onClick={() => setOpen(true)}>
-          <CameraIcon className="size-[18px]" aria-hidden="true" />
+          <CameraIcon className="share-icon size-[18px]" aria-hidden="true" />
         </Button>
       </Tooltip>
 
@@ -132,15 +146,20 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
               The final position, as a picture.
             </Dialog.Description>
 
-            <div className="mt-5 overflow-hidden rounded-xl ring-1 ring-[var(--board-dark)]">
+            {/*
+              Backed in a different tone from the dialog. The card's own background is the
+              surface colour, so on the surface it has no edge and reads as a board floating
+              in the dialog rather than as the picture that is about to be sent.
+            */}
+            <div className="mt-5 overflow-hidden rounded-xl bg-[var(--board-dark)] p-3 ring-1 ring-[var(--board-dark)]">
               {preview === null ? (
                 // Shaped like the image that is arriving, rather than a word saying so.
-                <div className="aspect-square w-full animate-pulse bg-[var(--board-dark)]" />
+                <div className="aspect-[1080/1160] w-full animate-pulse rounded-lg bg-[var(--surface)]" />
               ) : (
                 <img
                   src={preview}
                   alt={`The final position, ${result}`}
-                  className="block w-full select-none"
+                  className="block w-full rounded-lg select-none"
                   draggable={false}
                 />
               )}
