@@ -1663,6 +1663,9 @@ if (!hasRedis) {
           await new Promise((r) => setTimeout(r, 700));
         }
 
+        // The dialog itself, not just the card, so the swatch row can be looked at.
+        if (wantShots) await winner.page.screenshot({ path: `${OUT}/share-dialog-light.png` });
+
         const light = await cornerOf();
         const lightCorner = light.corner;
         check(
@@ -1705,6 +1708,8 @@ if (!hasRedis) {
           )
           .then((h) => h.jsonValue())
           .catch(() => null);
+
+        if (wantShots) await winner.page.screenshot({ path: `${OUT}/share-dialog-dark.png` });
 
         if (wantShots && darkCorner !== null) {
           const png = await winner.page.evaluate(async () => {

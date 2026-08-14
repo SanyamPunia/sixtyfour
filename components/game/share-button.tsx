@@ -280,12 +280,18 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
                       className={cn(
                         "size-7 cursor-pointer appearance-none rounded-full transition-all duration-200",
                         "outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]",
-                        // The ring is the only thing marking the choice, and a swatch can be
-                        // almost the same colour as the dialog behind it. The offset is what
-                        // keeps the two apart.
+                        /*
+                         * Three steps, none of them ink.
+                         *
+                         * The ring sits outside the swatch on the dialog's own surface, so
+                         * its job is to be legible against that rather than against the
+                         * fill it encircles, and full ink was far heavier than it needed to
+                         * be next to five pale discs. Weight carries the selected state and
+                         * the offset separates it, so tone does not have to shout.
+                         */
                         selected
-                          ? "ring-2 ring-[var(--ink)] ring-offset-2 ring-offset-[var(--surface)]"
-                          : "ring-1 ring-[var(--board-dark)] hover:ring-[var(--ink-soft)]",
+                          ? "ring-2 ring-[var(--ink-soft)] ring-offset-2 ring-offset-[var(--surface)]"
+                          : "ring-1 ring-[var(--sq-hint)] hover:ring-[var(--ink-soft)]",
                       )}
                       style={{ background: swatches[option.id] ?? "transparent" }}
                     />
