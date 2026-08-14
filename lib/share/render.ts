@@ -18,19 +18,32 @@ import {
   CARD_WIDTH,
   cardSvg,
 } from "./card.ts";
+import { CARD_BACKGROUNDS, LIGHT_THRESHOLD, lightnessOf } from "./palette.ts";
 
-/** Reads the live tokens, so the picture matches the theme the player is looking at. */
-export function readCardColors(): CardColors & {
+export interface CardPaint extends CardColors {
   ink: string;
   inkSoft: string;
   surface: string;
-} {
+}
+
+/**
+ * Reads the live tokens, then applies whichever background the player picked.
+ *
+ * The board keeps the theme's square tones whatever the background is, so a dark board can
+ * sit on cream. The caption cannot be left alone the same way: it is drawn straight onto
+ * the chosen colour, so its own colour is derived from how light that colour turned out.
+ * Storing a text colour beside each swatch would let the two drift, and would let a
+ * background added later arrive with unreadable text.
+ */
+export function readCardColors(backgroundId = "theme"): CardPaint {
   const style = getComputedStyle(document.documentElement);
   const token = (name: string, fallback: string) => {
     const value = style.getPropertyValue(name).trim();
     return value === "" ? fallback : value;
   };
-  return {
+
+  const choice = CARD_BACKGROUNDS.find((b) => b.id === backgroundId);
+  const base = {
     surface: token("--surface", "#fbfbfb"),
     boardLight: token("--board-light", "#fdfdfd"),
     boardDark: token("--board-dark", "#ececec"),
@@ -41,6 +54,28 @@ export function readCardColors(): CardColors & {
     ink: token("--ink", "#2a2a2c"),
     inkSoft: token("--ink-soft", "#8a8a90"),
   };
+
+  if (choice === undefined || choice.token === null) return base;
+
+  const surface = token(choice.token, base.surface);
+  const light = lightnessOf(surface) > LIGHT_THRESHOLD;
+  return {
+    ...base,
+    surface,
+    ink: token(light ? "--card-ink-on-light" : "--card-ink-on-dark", base.ink),
+    inkSoft: token(
+      light ? "--card-ink-soft-on-light" : "--card-ink-soft-on-dark",
+      base.inkSoft,
+    ),
+  };
+}
+
+/** The fill a swatch shows, which is the fill the card would get. */
+export function backgroundSwatch(backgroundId: string): string {
+  const style = getComputedStyle(document.documentElement);
+  const choice = CARD_BACKGROUNDS.find((b) => b.id === backgroundId);
+  const name = choice?.token ?? "--surface";
+  return style.getPropertyValue(name).trim() || "#fbfbfb";
 }
 
 function loadSvg(svg: string): Promise<HTMLImageElement> {
@@ -70,7 +105,7 @@ export interface RenderInput extends CardInput {
  * only paragraph of text in a product that has none.
  */
 export async function renderCard(input: RenderInput): Promise<Blob> {
-  const colors = input.colors as CardColors & { ink: string; inkSoft: string; surface: string };
+  const colors = input.colors as CardPaint;
   const canvas = document.createElement("canvas");
   canvas.width = CARD_WIDTH;
   canvas.height = CARD_HEIGHT;

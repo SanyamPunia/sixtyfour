@@ -9,7 +9,9 @@ import { Tooltip } from "@/components/ui/tooltip.tsx";
 import type { GameState } from "@/lib/game/reducer.ts";
 import { matedKingSquare, resultLabel } from "@/lib/game/reducer.ts";
 import { cardFilename } from "@/lib/share/card.ts";
+import { CARD_BACKGROUNDS, DEFAULT_BACKGROUND } from "@/lib/share/palette.ts";
 import {
+  backgroundSwatch,
   canCopyImages,
   copyImage,
   downloadImage,
@@ -39,11 +41,24 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
   const [preview, setPreview] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Kept for as long as the dialog is mounted, so trying a few and going back to the first
+  // does not fight you. It deliberately does not persist: it belongs to this picture.
+  const [background, setBackground] = useState(DEFAULT_BACKGROUND);
   const blobRef = useRef<Blob | null>(null);
   const urlRef = useRef<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const result = resultLabel(state);
+  const [swatches, setSwatches] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    // Read on opening rather than while rendering. There is no computed style on the
+    // server, and the tokens can change under a theme toggle while the page is alive.
+    const next: Record<string, string> = {};
+    for (const option of CARD_BACKGROUNDS) next[option.id] = backgroundSwatch(option.id);
+    setSwatches(next);
+  }, [open]);
 
   const release = useCallback(() => {
     if (urlRef.current !== null) URL.revokeObjectURL(urlRef.current);
@@ -73,7 +88,7 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
           flipped,
           lastMove: state.lastMove,
           matedKing: matedKingSquare(state),
-          colors: readCardColors(),
+          colors: readCardColors(background),
           result,
           humanColor: state.humanColor,
           moveCount: state.history.length,
@@ -91,7 +106,7 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
     return () => {
       cancelled = true;
     };
-  }, [open, result, state, flipped, release]);
+  }, [open, result, state, flipped, background, release]);
 
   const onCopy = async (): Promise<void> => {
     const blob = blobRef.current;
@@ -147,23 +162,69 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
             </Dialog.Description>
 
             {/*
-              Backed in a different tone from the dialog. The card's own background is the
-              surface colour, so on the surface it has no edge and reads as a board floating
-              in the dialog rather than as the picture that is about to be sent.
+              One hairline and nothing else.
+
+              This briefly had a padded backing in a different tone, to give the card an
+              edge against a dialog painted the same surface colour. In dark that tone is
+              lighter than the card itself, so it read as a frame around a frame. A single
+              ring separates them without drawing a second box.
             */}
-            <div className="mt-5 overflow-hidden rounded-xl bg-[var(--board-dark)] p-3 ring-1 ring-[var(--board-dark)]">
+            <div className="mt-5 overflow-hidden rounded-xl ring-1 ring-[var(--board-dark)]">
               {preview === null ? (
                 // Shaped like the image that is arriving, rather than a word saying so.
-                <div className="aspect-[1080/1160] w-full animate-pulse rounded-lg bg-[var(--surface)]" />
+                <div className="aspect-[1080/1160] w-full animate-pulse bg-[var(--board-dark)]" />
               ) : (
                 <img
                   src={preview}
                   alt={`The final position, ${result}`}
-                  className="block w-full rounded-lg select-none"
+                  className="block w-full select-none"
                   draggable={false}
                 />
               )}
             </div>
+
+            {/*
+              The backgrounds, under the picture they change.
+
+              Placed here rather than beside the actions, because choosing one is part of
+              looking at the picture and not part of sending it. The row is short on
+              purpose: a long one turns two presses into a decision.
+            */}
+            <fieldset className="mt-4 flex items-center justify-center gap-2">
+              <legend className="sr-only">Picture background</legend>
+              {CARD_BACKGROUNDS.map((option) => {
+                const selected = option.id === background;
+                return (
+                  <Tooltip key={option.id} label={option.label}>
+                    {/*
+                      A real radio, restyled, rather than a button wearing the role. Same
+                      name means the browser gives the group its arrow-key behaviour and its
+                      announcement for free, and native controls carry their own press
+                      state.
+                    */}
+                    <input
+                      type="radio"
+                      name="card-background"
+                      value={option.id}
+                      checked={selected}
+                      onChange={() => setBackground(option.id)}
+                      aria-label={option.label}
+                      className={cn(
+                        "size-7 cursor-pointer appearance-none rounded-full transition-all duration-200",
+                        "outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface)]",
+                        // The ring is the only thing marking the choice, and a swatch can be
+                        // almost the same colour as the dialog behind it. The offset is what
+                        // keeps the two apart.
+                        selected
+                          ? "ring-2 ring-[var(--ink)] ring-offset-2 ring-offset-[var(--surface)]"
+                          : "ring-1 ring-[var(--board-dark)] hover:ring-[var(--ink-soft)]",
+                      )}
+                      style={{ background: swatches[option.id] ?? "transparent" }}
+                    />
+                  </Tooltip>
+                );
+              })}
+            </fieldset>
 
             <div className="mt-5 flex items-center gap-2 border-t border-[var(--board-dark)] pt-4">
               {canCopyImages() ? (

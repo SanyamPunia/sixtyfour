@@ -85,6 +85,27 @@
   --share-to: #c06a3e;
 
   /*
+   * Backgrounds a player can pick for the shared picture.
+   *
+   * Not theme-scoped, unlike everything above. The choice is explicit and travels with the
+   * image to wherever it is posted, so a picture someone deliberately made cream must not
+   * turn charcoal because they later switched the interface to dark.
+   *
+   * The board itself keeps the theme's square tones. A dark board mounted on cream reads
+   * like a print rather than a mistake, and it is the reason to offer the choice at all.
+   */
+  --card-paper: #f5f4f1;
+  --card-sand: #ece4d4;
+  --card-slate: #242731;
+  --card-charcoal: #0c0c0e;
+
+  /* Text for those, picked by how light the background underneath it is. */
+  --card-ink-on-light: #2a2a2c;
+  --card-ink-soft-on-light: #8a8a90;
+  --card-ink-on-dark: #e6e6ea;
+  --card-ink-soft-on-dark: #7e7e88;
+
+  /*
    * Durations. Board choreography needs a wider range than the two control durations,
    * which is a documented exception in CLAUDE.md.
    */
