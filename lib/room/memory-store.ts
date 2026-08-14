@@ -18,6 +18,7 @@ import type { CreateOutcome, RoomStore } from "./store.ts";
 export class MemoryRoomStore implements RoomStore {
   private rooms = new Map<string, Room>();
   private seen = new Map<string, number>();
+  private buckets = new Map<string, number[]>();
 
   /** Set by a test to make a swap lose a race it would otherwise win. */
   onBeforeSwap: (() => void | Promise<void>) | null = null;
@@ -58,6 +59,21 @@ export class MemoryRoomStore implements RoomStore {
     return this.live(now).length;
   }
 
+  async extend(key: string, expiresAt: number): Promise<void> {
+    const room = this.rooms.get(key);
+    if (room === undefined) return;
+    // The stored object only, never a version. See the note on the interface.
+    this.rooms.set(key, { ...room, expiresAt });
+  }
+
+  async hits(bucket: string, windowMs: number): Promise<number> {
+    const now = Date.now();
+    const seen = (this.buckets.get(bucket) ?? []).filter((t) => t > now - windowMs);
+    seen.push(now);
+    this.buckets.set(bucket, seen);
+    return seen.length;
+  }
+
   async touch(key: string, seat: Seat, now: number): Promise<void> {
     this.seen.set(`${key}:${seat}`, now);
   }
@@ -72,5 +88,6 @@ export class MemoryRoomStore implements RoomStore {
   async close(): Promise<void> {
     this.rooms.clear();
     this.seen.clear();
+    this.buckets.clear();
   }
 }

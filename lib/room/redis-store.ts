@@ -53,6 +53,27 @@ redis.call('ZADD', KEYS[3], ARGV[4], ARGV[5])
 return 1
 `;
 
+/**
+ * Pushes the lease back on all three keys that carry it.
+ *
+ * The room, its version, and the index entry the cap is counted from all have to agree, or
+ * a room outlives the number that decides whether it is still occupying a slot.
+ */
+const EXTEND = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+redis.call('PEXPIREAT', KEYS[1], ARGV[1])
+redis.call('PEXPIREAT', KEYS[2], ARGV[1])
+redis.call('ZADD', KEYS[3], ARGV[1], ARGV[2])
+return 1
+`;
+
+/** A counter that starts its own clock, so a window cannot be reset by counting again. */
+const HITS = `
+local n = redis.call('INCR', KEYS[1])
+if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+return n
+`;
+
 export interface RedisRoomStoreOptions {
   /**
    * Namespaces every key. Tests use one per run, so a contract suite can fill the room cap
@@ -149,6 +170,28 @@ export class RedisRoomStore implements RoomStore {
   async activeCount(now: number): Promise<number> {
     await this.redis.zremrangebyscore(this.indexKey(), "-inf", now);
     return await this.redis.zcard(this.indexKey());
+  }
+
+  async extend(key: string, expiresAt: number): Promise<void> {
+    await this.redis.eval(
+      EXTEND,
+      3,
+      this.roomKey(key),
+      this.versionKey(key),
+      this.indexKey(),
+      String(expiresAt),
+      key,
+    );
+  }
+
+  async hits(bucket: string, windowMs: number): Promise<number> {
+    const count = await this.redis.eval(
+      HITS,
+      1,
+      `${this.prefix}hits:${bucket}`,
+      String(windowMs),
+    );
+    return Number(count);
   }
 
   async touch(key: string, seat: Seat, now: number): Promise<void> {

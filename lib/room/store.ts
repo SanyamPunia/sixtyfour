@@ -41,6 +41,24 @@ export interface RoomStore {
   /** Rooms that have not expired. The cap is enforced against this. */
   activeCount(now: number): Promise<number>;
 
+  /**
+   * Pushes a room's expiry back without touching the room itself.
+   *
+   * Deliberately not a `swap`. A lease is not a change to the game, so it must not move the
+   * version: every client is holding that number to send its next move against, and bumping
+   * it because somebody's tab is still open would refuse a move that was never stale.
+   */
+  extend(key: string, expiresAt: number): Promise<void>;
+
+  /**
+   * Counts one hit against a named bucket and returns the running total for the window.
+   *
+   * Here rather than in a module-level map because there is no single process to keep one
+   * in. Every request may land on a different instance, and a limit each instance counts
+   * separately is a limit multiplied by however many are running.
+   */
+  hits(bucket: string, windowMs: number): Promise<number>;
+
   /** Records that a seat was seen. Called on connect and on every heartbeat. */
   touch(key: string, seat: Seat, now: number): Promise<void>;
 

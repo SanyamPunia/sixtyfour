@@ -139,6 +139,35 @@ function contract(
       assert.equal(await store.activeCount(NOW), before - 1);
     });
 
+    test("a lease can be pushed back without touching the room", opts, async () => {
+      // The version has to stay put: a client holds it to send its next move against, so
+      // moving it because somebody's tab is open would refuse a move that was never stale.
+      const store = get();
+      const key = `L${randomUUID().slice(0, 5).toUpperCase()}`;
+      await store.create(room(key, 3, ["e2e4"]), ROOM_CAP);
+
+      const later = NOW + 120_000;
+      assert.equal(await store.activeCount(later), 0, "it should have lapsed by then");
+
+      await store.create(room(key, 3, ["e2e4"]), ROOM_CAP);
+      await store.extend(key, later + 60_000);
+      assert.equal(await store.activeCount(later), 1, "the lease did not move");
+
+      const read = await store.get(key);
+      assert.equal(read?.version, 3, "extending changed the version");
+      assert.deepEqual(read?.moves, ["e2e4"], "extending changed the board");
+    });
+
+    test("hits accumulate inside a window and start their own clock", opts, async () => {
+      const store = get();
+      const bucket = `B${randomUUID().slice(0, 6)}`;
+      assert.equal(await store.hits(bucket, 60_000), 1);
+      assert.equal(await store.hits(bucket, 60_000), 2);
+      assert.equal(await store.hits(bucket, 60_000), 3);
+      // A different bucket is a different caller and counts separately.
+      assert.equal(await store.hits(`${bucket}x`, 60_000), 1);
+    });
+
     test("an expired room stops counting", opts, async () => {
       const store = get();
       const key = `X${randomUUID().slice(0, 5).toUpperCase()}`;
