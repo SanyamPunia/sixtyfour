@@ -1,12 +1,13 @@
 "use client";
 
 import type { Color } from "@/lib/chess/types.ts";
-import type { Difficulty } from "@/lib/game/reducer.ts";
+import type { Difficulty, GameState } from "@/lib/game/reducer.ts";
 import { DifficultyButton } from "./difficulty-button.tsx";
 import { MuteButton } from "./mute-button.tsx";
 import { NewGameButton } from "./new-game-button.tsx";
 import { RematchButton } from "./rematch-button.tsx";
 import { RoomButton } from "./room-button.tsx";
+import { ShareButton } from "./share-button.tsx";
 import { SideButton } from "./side-button.tsx";
 import { ThemeToggle } from "./theme-toggle.tsx";
 import type { RoomControls, RoomView } from "./use-room.ts";
@@ -20,6 +21,9 @@ interface ControlBarProps {
   /** The game is over, so starting again is the only thing left to do. */
   attention: boolean;
   inRoom: boolean;
+  /** Read only for the shared picture, which needs the whole finished position. */
+  state: GameState;
+  flipped: boolean;
   room: RoomView;
   roomControls: RoomControls;
   onSide: (color: Color) => void;
@@ -49,6 +53,8 @@ export function ControlBar({
   moveCount,
   attention,
   inRoom,
+  state,
+  flipped,
   room,
   roomControls,
   onSide,
@@ -76,6 +82,8 @@ export function ControlBar({
         </>
       )}
       <RoomButton room={room} controls={roomControls} />
+      {/* Only rendered once there is a result, so it appears exactly when it is useful. */}
+      <ShareButton state={state} flipped={flipped} />
       {inRoom ? (
         <RematchButton
           enabled={attention}

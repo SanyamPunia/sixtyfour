@@ -133,6 +133,8 @@ export function Game() {
             humanColor={state.humanColor}
             muted={muted}
             inRoom={inRoom}
+            state={state}
+            flipped={state.humanColor === BLACK}
             room={room}
             roomControls={roomControls}
             onSide={changeSide}
