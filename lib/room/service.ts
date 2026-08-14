@@ -16,7 +16,15 @@ import { gameStatus, isGameOver } from "../chess/rules.ts";
 import type { Color, GameStatus, Position } from "../chess/types.ts";
 import { BLACK, WHITE } from "../chess/types.ts";
 import { generateKey, generateToken } from "./key.ts";
-import type { RejectReason, Room, RoomSnapshot, Seat, SeatPreference } from "./protocol.ts";
+import type {
+  Presence,
+  RejectReason,
+  Room,
+  RoomSnapshot,
+  Seat,
+  SeatMap,
+  SeatPreference,
+} from "./protocol.ts";
 import type { RoomStore } from "./store.ts";
 
 /**
@@ -79,10 +87,30 @@ function seatOfToken(room: Room, token: string): Seat | null {
   return null;
 }
 
-function pickSeat(room: Room, prefer: SeatPreference): Seat | null {
-  const free: Seat[] = [];
-  if (room.seats.white === null) free.push("white");
-  if (room.seats.black === null) free.push("black");
+/**
+ * Which seat this player can have, or null.
+ *
+ * A seat nobody has answered from in a while is available again. Without that, a player who
+ * closed the tab is locked out of their own game: the token that proved the seat was theirs
+ * lives in that tab and died with it, while the seat stays claimed for the room's full
+ * lifetime. The room then reports itself full to the only two people entitled to be in it.
+ *
+ * Genuinely empty seats are taken first, so a second player joining a fresh room never
+ * displaces the person who made it.
+ */
+function pickSeat(
+  room: Room,
+  prefer: SeatPreference,
+  presence: SeatMap<Presence>,
+): Seat | null {
+  const empty: Seat[] = [];
+  const abandoned: Seat[] = [];
+  for (const seat of ["white", "black"] as const) {
+    if (room.seats[seat] === null) empty.push(seat);
+    else if (presence[seat] === "gone") abandoned.push(seat);
+  }
+
+  const free = empty.length > 0 ? empty : abandoned;
   if (free.length === 0) return null;
   if (prefer !== "random" && free.includes(prefer)) return prefer;
   return free[Math.floor(Math.random() * free.length)] as Seat;
@@ -127,6 +155,11 @@ export async function createRoom(
     const outcome = await store.create(room, ROOM_CAP);
     if (outcome === "full") return { ok: false, reason: "full" };
     if (outcome === "created") {
+      // Taking a seat is itself proof of being here, and it is recorded where the seat is
+      // granted rather than by the caller. A seat with no last-seen time is
+      // indistinguishable from one that was abandoned, so forgetting this would make every
+      // new seat immediately reclaimable by the next person with the link.
+      await store.touch(room.key, seat, options.now);
       return { ok: true, room, snapshot: snapshot(room, "playing"), seat, token };
     }
   }
@@ -167,6 +200,7 @@ export async function joinRoom(
 
     const held = options.token === undefined ? null : seatOfToken(room, options.token);
     if (held !== null) {
+      await store.touch(options.key, held, options.now);
       return {
         ok: true,
         snapshot: snapshot(room, status),
@@ -176,7 +210,8 @@ export async function joinRoom(
       };
     }
 
-    const seat = pickSeat(room, options.prefer ?? "random");
+    const presence = await store.presence(options.key, options.now);
+    const seat = pickSeat(room, options.prefer ?? "random", presence);
     if (seat === null) return { ok: false, reason: "full" };
 
     const token = generateToken();
@@ -189,6 +224,7 @@ export async function joinRoom(
     // is what makes exactly one of them get it, and the loser goes round again and is told
     // the room is full.
     if (await store.swap(next, room.version)) {
+      await store.touch(options.key, seat, options.now);
       return { ok: true, snapshot: snapshot(next, status), seat, token, fresh: true };
     }
   }
@@ -319,4 +355,50 @@ export async function rematch(
     return { ok: false, reason: "stale", snapshot: snapshot(room, status) };
   }
   return { ok: true, snapshot: snapshot(next, "playing"), uci: "", seat };
+}
+
+/**
+ * Gives up a seat, and takes the room with it if that was the last one.
+ *
+ * Called when a player presses leave, and best-effort when a tab closes. Without it the
+ * only thing that frees a seat is the abandonment window in `pickSeat`, so leaving and
+ * coming straight back would report the room full for as long as that window lasts.
+ *
+ * Removing an empty room matters more than it looks. Rooms are capped globally, so one
+ * abandoned game holds a fifth of the capacity until it expires a day later.
+ */
+export async function leaveRoom(
+  store: RoomStore,
+  options: { key: string; token: string; now: number },
+): Promise<MoveResult> {
+  for (let attempt = 0; attempt < SWAP_ATTEMPTS; attempt++) {
+    const room = await store.get(options.key);
+    if (room === null || room.expiresAt <= options.now) {
+      return { ok: false, reason: "not-found", snapshot: null };
+    }
+    const seat = seatOfToken(room, options.token);
+    if (seat === null) {
+      // Not holding a seat here, so there is nothing to give up. Reported as success
+      // because the caller's intent, to not be in this room, is already true.
+      const status = replay(room.moves)?.status ?? "playing";
+      return { ok: true, snapshot: snapshot(room, status), uci: "", seat: "white" };
+    }
+
+    const next: Room = {
+      ...room,
+      version: room.version + 1,
+      seats: { ...room.seats, [seat]: null },
+    };
+
+    if (next.seats.white === null && next.seats.black === null) {
+      await store.remove(options.key);
+      return { ok: true, snapshot: snapshot(next, "playing"), uci: "", seat };
+    }
+
+    if (await store.swap(next, room.version)) {
+      const status = replay(next.moves)?.status ?? "playing";
+      return { ok: true, snapshot: snapshot(next, status), uci: "", seat };
+    }
+  }
+  return { ok: false, reason: "stale", snapshot: null };
 }

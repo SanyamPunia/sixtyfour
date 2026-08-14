@@ -464,7 +464,9 @@ describe("presence", () => {
   });
 
   test("the store reports both seats independently", async () => {
-    const { key } = await twoPlayerRoom();
+    // A bare key rather than a seated room. Taking a seat now records presence, so a real
+    // room has both seats reporting here and there is nothing left to tell apart.
+    const key = "PRESNC";
     await store.touch(key, "white", NOW);
     assert.deepEqual(await store.presence(key, NOW), { white: "here", black: "gone" });
     await store.touch(key, "black", NOW - AWAY_MS - 1);

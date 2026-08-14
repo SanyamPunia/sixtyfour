@@ -15,12 +15,14 @@ import { beforeEach, describe, test } from "node:test";
 import {
   handleCreate,
   handleJoin,
+  handleLeave,
   handleMove,
   handlePoll,
   handleRematch,
   readKey,
 } from "./handlers.ts";
 import { MemoryRoomStore } from "./memory-store.ts";
+import { AWAY_MS } from "./presence.ts";
 import type { JoinedBody, RejectedBody, StateBody } from "./protocol.ts";
 import { ROOM_CAP } from "./service.ts";
 
@@ -290,5 +292,117 @@ describe("secrets", () => {
       assert.equal(text.includes(host.token), false, `${name} leaked the white token`);
       assert.equal(text.includes(guest.token), false, `${name} leaked the black token`);
     }
+  });
+});
+
+/**
+ * Giving a seat back.
+ *
+ * The bugs these cover were all the same shape: a seat stays claimed by somebody who is not
+ * there, and the room then refuses the only two people entitled to be in it. It is the one
+ * failure a player cannot work around, because the room looks full and the key looks wrong.
+ */
+describe("leaving", () => {
+  test("frees the seat for someone else", async () => {
+    const { key, host } = await openRoom("white");
+    assert.equal((await handleJoin(store, key, {}, NOW)).status, 409, "room was not full");
+
+    assert.equal((await handleLeave(store, key, { token: host.token }, NOW)).status, 200);
+
+    const replacement = await handleJoin(store, key, {}, NOW);
+    assert.equal(replacement.status, 200, "the freed seat was still refused");
+    assert.equal((replacement.body as JoinedBody).seat, "white");
+  });
+
+  test("the last player out closes the room", async () => {
+    const { key, host, guest } = await openRoom("white");
+    await handleLeave(store, key, { token: host.token }, NOW);
+    assert.notEqual(await store.get(key), null, "the room went with the first player");
+
+    await handleLeave(store, key, { token: guest.token }, NOW);
+    assert.equal(await store.get(key), null, "an empty room was left holding a slot");
+    assert.equal(await store.activeCount(NOW), 0);
+  });
+
+  test("a token that holds no seat is not an error", async () => {
+    // Called from a tab that is closing, where there is nothing left to retry with, so the
+    // useful answer to "I am not in this room" is that this is already true.
+    const { key } = await openRoom("white");
+    assert.equal((await handleLeave(store, key, { token: "not-a-seat" }, NOW)).status, 200);
+  });
+
+  test("leaving does not disturb the other player or the board", async () => {
+    const { key, host, guest } = await openRoom("white");
+    await handleMove(
+      store,
+      key,
+      { token: host.token, uci: "e2e4", at: guest.room.version },
+      NOW,
+    );
+    await handleLeave(store, key, { token: host.token }, NOW);
+
+    const room = await store.get(key);
+    assert.deepEqual(room?.moves, ["e2e4"], "the board was cleared by someone leaving");
+    assert.equal(room?.seats.black, guest.token, "the other seat was released too");
+  });
+});
+
+describe("abandoned seats", () => {
+  test("a seat nobody has answered from can be taken", async () => {
+    const { key } = await openRoom("white");
+    assert.equal((await handleJoin(store, key, {}, NOW)).status, 409);
+
+    // Long enough that both seats read as gone. This is the case that locked a player out
+    // of their own game: the token proving the seat was theirs died with the closed tab.
+    const later = NOW + AWAY_MS + 1_000;
+    const back = await handleJoin(store, key, {}, later);
+    assert.equal(back.status, 200, "an abandoned seat stayed claimed forever");
+  });
+
+  test("a seat still being polled from is not taken", async () => {
+    const { key, host, guest } = await openRoom("white");
+    const later = NOW + AWAY_MS + 1_000;
+    // Both are still there and asking, which is what a seated player does every poll. The
+    // abandonment window must never fire on someone whose only crime is a quiet game.
+    await handlePoll(store, key, "white", later);
+    await handlePoll(store, key, "black", later);
+
+    const intruder = await handleJoin(store, key, { prefer: "white" }, later);
+    assert.equal(intruder.status, 409, "a seat was taken from a player who was present");
+    const room = await store.get(key);
+    assert.equal(room?.seats.white, host.token);
+    assert.equal(room?.seats.black, guest.token);
+  });
+
+  test("only the abandoned seat is offered, never the occupied one", async () => {
+    const { key, host } = await openRoom("white");
+    const later = NOW + AWAY_MS + 1_000;
+    // White is present. Black stopped answering.
+    await handlePoll(store, key, "white", later);
+
+    const arrival = await handleJoin(store, key, { prefer: "white" }, later);
+    assert.equal(arrival.status, 200);
+    assert.equal(
+      (arrival.body as JoinedBody).seat,
+      "black",
+      "a preference overrode a seated player",
+    );
+    assert.equal((await store.get(key))?.seats.white, host.token, "white was displaced");
+  });
+
+  test("an empty seat is preferred over an abandoned one", async () => {
+    // A second player joining a fresh room must never displace the person who made it,
+    // even once the creator's first heartbeat has aged out.
+    const created = await handleCreate(store, { prefer: "white" }, NOW);
+    const host = created.body as JoinedBody;
+    const key = host.room.key;
+
+    const later = NOW + AWAY_MS + 1_000;
+    for (let i = 0; i < 8; i++) {
+      const joined = await handleJoin(store, key, {}, later);
+      assert.equal((joined.body as JoinedBody).seat, "black", "the creator was displaced");
+      await handleLeave(store, key, { token: (joined.body as JoinedBody).token }, later);
+    }
+    assert.equal((await store.get(key))?.seats.white, host.token);
   });
 });

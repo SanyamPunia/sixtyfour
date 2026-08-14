@@ -266,6 +266,22 @@ export function useRoom(
   );
 
   const leave = useCallback(() => {
+    // Told to the server first, while the token is still to hand. Without this the seat
+    // stays claimed and the room reports itself full to the two people entitled to it.
+    const roomKey = keyRef.current;
+    const token = tokenRef.current;
+    if (roomKey !== null && token !== null) {
+      void fetch(`/api/rooms/${roomKey}/leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+        keepalive: true,
+      }).catch(() => {
+        // The abandonment window in the service is the backstop. Nothing to retry with.
+      });
+      forgetToken(roomKey);
+    }
+
     keyRef.current = null;
     seatRef.current = null;
     tokenRef.current = null;
@@ -392,6 +408,28 @@ export function useRoom(
   // Held so the link effect can run once and still reach the current `join`.
   const joinRef = useRef(join);
   joinRef.current = join;
+
+  /**
+   * Releases the seat as the tab goes away.
+   *
+   * `pagehide` rather than `beforeunload`, because a phone backgrounding a tab fires the
+   * former and may kill the page without ever firing the latter. `sendBeacon` because a
+   * normal fetch is cancelled the moment the document goes, and nothing here reads a reply.
+   *
+   * Best effort by nature, so it is not the only defence. A seat nobody has answered from
+   * is reclaimable anyway, and that is what covers a crash or a lost connection.
+   */
+  useEffect(() => {
+    const release = () => {
+      const roomKey = keyRef.current;
+      const token = tokenRef.current;
+      if (roomKey === null || token === null) return;
+      const body = new Blob([JSON.stringify({ token })], { type: "application/json" });
+      navigator.sendBeacon?.(`/api/rooms/${roomKey}/leave`, body);
+    };
+    window.addEventListener("pagehide", release);
+    return () => window.removeEventListener("pagehide", release);
+  }, []);
 
   const other: Presence =
     seat === null ? "gone" : presence[seat === "white" ? "black" : "white"];

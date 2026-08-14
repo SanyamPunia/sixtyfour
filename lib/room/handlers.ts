@@ -19,7 +19,15 @@ import type {
   SeatPreference,
 } from "./protocol.ts";
 import { PROTOCOL } from "./protocol.ts";
-import { createRoom, joinRoom, playMove, rematch, replay, snapshot } from "./service.ts";
+import {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  playMove,
+  rematch,
+  replay,
+  snapshot,
+} from "./service.ts";
 import type { RoomStore } from "./store.ts";
 
 export interface ApiResult {
@@ -85,7 +93,6 @@ export async function handleCreate(
   const result = await createRoom(store, { now, ...(prefer === undefined ? {} : { prefer }) });
   if (!result.ok) return refuse(STATUS.full, "full");
 
-  await store.touch(result.room.key, result.seat, now);
   return {
     status: 201,
     body: {
@@ -115,7 +122,6 @@ export async function handleJoin(
   });
   if (!result.ok) return refuse(STATUS[result.reason], result.reason);
 
-  await store.touch(key, result.seat, now);
   return {
     status: 200,
     body: {
@@ -168,6 +174,35 @@ export async function handleRematch(
   const result = await rematch(store, { key, token, now });
   if (!result.ok) return refuse(STATUS[result.reason], result.reason, result.snapshot);
 
+  return {
+    status: 200,
+    body: {
+      protocol: PROTOCOL,
+      type: "state",
+      room: result.snapshot,
+      presence: await store.presence(key, now),
+    },
+  };
+}
+
+/**
+ * Gives up a seat.
+ *
+ * Reported as success when the token holds no seat here, because the caller wanted to not
+ * be in this room and already is not. A leave that fails is worse than useless: it is
+ * called from a tab that is closing and there is nobody left to retry it.
+ */
+export async function handleLeave(
+  store: RoomStore,
+  key: string,
+  body: unknown,
+  now: number,
+): Promise<ApiResult> {
+  const token = text(body, "token");
+  if (token === undefined) return refuse(STATUS["not-your-seat"], "not-your-seat");
+
+  const result = await leaveRoom(store, { key, token, now });
+  if (!result.ok) return refuse(STATUS[result.reason], result.reason, result.snapshot);
   return {
     status: 200,
     body: {
