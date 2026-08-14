@@ -22,8 +22,10 @@ import { PROTOCOL } from "./protocol.ts";
 import {
   createRoom,
   joinRoom,
+  LEASE_REFRESH_MS,
   leaveRoom,
   playMove,
+  ROOM_IDLE_MS,
   rematch,
   replay,
   snapshot,
@@ -85,11 +87,31 @@ export function readKey(raw: string): string | null {
   return isValidKey(key) ? key : null;
 }
 
+/**
+ * How many rooms one caller may open in an hour.
+ *
+ * The cap on rooms is what keeps this affordable, and that same cap is the only way the
+ * feature can be taken away from everyone at once: five requests with no account behind
+ * them held every slot. The idle window means those rooms now release themselves, and this
+ * is what stops them being taken again the moment they do.
+ *
+ * Five is above anything a person does. Making a room, sharing it, and starting over
+ * because the link went to the wrong chat is three.
+ */
+export const CREATES_PER_HOUR = 5;
+const HOUR_MS = 60 * 60 * 1000;
+
 export async function handleCreate(
   store: RoomStore,
   body: unknown,
   now: number,
+  caller = "unknown",
 ): Promise<ApiResult> {
+  // Counted before the room is made, so a refused create costs a caller their allowance
+  // rather than a slot.
+  const opened = await store.hits(`create:${caller}`, HOUR_MS);
+  if (opened > CREATES_PER_HOUR) return refuse(429, "no-capacity");
+
   const prefer = preference(body);
   const result = await createRoom(store, { now, ...(prefer === undefined ? {} : { prefer }) });
   // Not `full`. Nothing is wrong with any particular room, there is simply no slot left,
@@ -237,6 +259,18 @@ export async function handlePoll(
 
   const room = await store.get(key);
   if (room === null || room.expiresAt <= now) return refuse(STATUS["not-found"], "not-found");
+
+  /*
+   * Somebody is looking at this room, so it is not idle.
+   *
+   * Only once the lease is over halfway gone, which turns a write on every poll into one
+   * every quarter of an hour. It extends rather than swaps, so the version does not move:
+   * a client is holding that number to send its next move against, and bumping it because
+   * a tab is open would refuse a move that was never stale.
+   */
+  if (room.expiresAt - now < LEASE_REFRESH_MS) {
+    await store.extend(key, now + ROOM_IDLE_MS);
+  }
 
   const status = replay(room.moves)?.status ?? "playing";
   return {

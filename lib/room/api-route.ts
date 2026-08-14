@@ -106,6 +106,22 @@ export async function readBody(request: Request): Promise<unknown | null> {
   }
 }
 
+/**
+ * Who is asking, for the purpose of counting how often they ask.
+ *
+ * `x-forwarded-for` is a list, and only the first entry is the client as the platform saw
+ * it. The rest are proxies and anything a caller chose to put there themselves, so taking
+ * the whole header would let one caller present a different identity per request.
+ *
+ * A caller behind a shared address counts as one. That is the trade: five rooms an hour is
+ * far above what a person does, so an office sharing an address still never notices.
+ */
+export function callerOf(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for") ?? "";
+  const first = forwarded.split(",")[0]?.trim() ?? "";
+  return first === "" ? (request.headers.get("x-real-ip") ?? "unknown") : first;
+}
+
 export interface RouteOptions {
   /** Omitted for a poll, which has no body. */
   request?: Request;

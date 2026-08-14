@@ -36,8 +36,22 @@ import type { RoomStore } from "./store.ts";
  */
 export const ROOM_CAP = 5;
 
-/** Refreshed on every move, so a game in progress cannot expire underneath the players. */
-export const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * How long a room outlives the last sign of anyone being in it.
+ *
+ * Not a fixed lifetime. A room stays open for as long as somebody has it open, because the
+ * poll that keeps a seat present pushes this back as well: a game paused for an hour while
+ * two people argue about a move is still a live room. What the window measures is silence.
+ *
+ * Thirty minutes because a backgrounded tab stops polling entirely, so this has to survive
+ * someone switching away to answer a message and coming back. It also decides how quickly
+ * the five slots recover from rooms that were opened and never used, which is the only way
+ * this feature can be denied to everybody at once.
+ */
+export const ROOM_IDLE_MS = 30 * 60 * 1000;
+
+/** Pushed back once a lease is over halfway gone, rather than on every single poll. */
+export const LEASE_REFRESH_MS = ROOM_IDLE_MS / 2;
 
 /** A swap can only lose to another writer, and the other writer has now finished. */
 const SWAP_ATTEMPTS = 4;
@@ -150,7 +164,7 @@ export async function createRoom(
       moves: [],
       seats: { white: null, black: null, [seat]: token } as Room["seats"],
       createdAt: options.now,
-      expiresAt: options.now + ROOM_TTL_MS,
+      expiresAt: options.now + ROOM_IDLE_MS,
     };
     const outcome = await store.create(room, ROOM_CAP);
     if (outcome === "full") return { ok: false, reason: "full" };
@@ -296,7 +310,7 @@ export async function playMove(
     ...room,
     version: room.version + 1,
     moves: [...room.moves, options.uci],
-    expiresAt: options.now + ROOM_TTL_MS,
+    expiresAt: options.now + ROOM_IDLE_MS,
   };
 
   if (!(await store.swap(next, room.version))) {
@@ -349,7 +363,7 @@ export async function rematch(
     ...room,
     version: room.version + 1,
     moves: [],
-    expiresAt: options.now + ROOM_TTL_MS,
+    expiresAt: options.now + ROOM_IDLE_MS,
   };
   if (!(await store.swap(next, room.version))) {
     return { ok: false, reason: "stale", snapshot: snapshot(room, status) };

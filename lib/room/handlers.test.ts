@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, test } from "node:test";
 import {
+  CREATES_PER_HOUR,
   handleCreate,
   handleJoin,
   handleLeave,
@@ -24,7 +25,7 @@ import {
 import { MemoryRoomStore } from "./memory-store.ts";
 import { AWAY_MS } from "./presence.ts";
 import type { JoinedBody, RejectedBody, StateBody } from "./protocol.ts";
-import { ROOM_CAP } from "./service.ts";
+import { LEASE_REFRESH_MS, ROOM_CAP, ROOM_IDLE_MS } from "./service.ts";
 
 const NOW = 1_700_000_000_000;
 
@@ -85,8 +86,10 @@ describe("creating", () => {
      * finding another, when the truth is that the service has no capacity and waiting is
      * the only thing that helps.
      */
-    for (let i = 0; i < ROOM_CAP; i++) await handleCreate(store, {}, NOW);
-    const over = await handleCreate(store, {}, NOW);
+    // A different caller each time, or the per-caller limit answers first and this stops
+    // testing the cap at all.
+    for (let i = 0; i < ROOM_CAP; i++) await handleCreate(store, {}, NOW, `c${i}`);
+    const over = await handleCreate(store, {}, NOW, "someone-else");
     assert.equal(over.status, 503, "capacity is a server condition, not a conflict");
     assert.equal((over.body as RejectedBody).reason, "no-capacity");
 
@@ -419,5 +422,104 @@ describe("abandoned seats", () => {
       await handleLeave(store, key, { token: (joined.body as JoinedBody).token }, later);
     }
     assert.equal((await store.get(key))?.seats.white, host.token);
+  });
+});
+
+/**
+ * How long a room lives, and how fast one can be made.
+ *
+ * These two together are the whole answer to the only way this feature can be taken from
+ * everyone at once. Five requests with no account behind them used to hold every slot for a
+ * day. A room now outlives the last sign of anyone being in it by a fixed window, and one
+ * caller cannot keep retaking the slots as they free.
+ */
+describe("how long a room lives", () => {
+  test("a room nobody uses releases its slot", async () => {
+    for (let i = 0; i < ROOM_CAP; i++) await handleCreate(store, {}, NOW, `c${i}`);
+    assert.equal(
+      (await handleCreate(store, {}, NOW, "someone-else")).status,
+      503,
+      "the cap did not hold",
+    );
+
+    const later = NOW + ROOM_IDLE_MS + 1_000;
+    assert.equal(await store.activeCount(later), 0, "abandoned rooms held their slots");
+  });
+
+  test("a room somebody is looking at does not", async () => {
+    const { key } = await openRoom("white");
+    // One poll, late enough that the original lease is more than half gone.
+    const halfway = NOW + LEASE_REFRESH_MS + 1_000;
+    assert.equal((await handlePoll(store, key, "white", halfway)).status, 200);
+
+    // Past the point the room would have died had nobody asked for it.
+    const past = NOW + ROOM_IDLE_MS + 1_000;
+    assert.equal(
+      (await handlePoll(store, key, "white", past)).status,
+      200,
+      "a live room expired",
+    );
+    assert.equal(await store.activeCount(past), 1);
+  });
+
+  test("a poll does not move the version", async () => {
+    /*
+     * The lease is extended rather than swapped for exactly this reason. A client holds the
+     * version to send its next move against, so moving it because a tab is open would
+     * refuse a move that was never stale.
+     */
+    const { key, host, guest } = await openRoom("white");
+    const before = guest.room.version;
+    await handlePoll(store, key, "white", NOW + LEASE_REFRESH_MS + 1_000);
+    assert.equal((await store.get(key))?.version, before, "a poll changed the version");
+
+    const move = await handleMove(
+      store,
+      key,
+      { token: host.token, uci: "e2e4", at: before },
+      NOW + LEASE_REFRESH_MS + 2_000,
+    );
+    assert.equal(move.status, 200, "a move was refused as stale after a poll");
+  });
+
+  test("a move counts as being here too", async () => {
+    const { key, host, guest } = await openRoom("white");
+    const late = NOW + LEASE_REFRESH_MS + 1_000;
+    await handleMove(
+      store,
+      key,
+      { token: host.token, uci: "e2e4", at: guest.room.version },
+      late,
+    );
+    assert.equal(await store.activeCount(late + ROOM_IDLE_MS - 1_000), 1);
+  });
+});
+
+describe("how fast rooms can be made", () => {
+  test("one caller cannot keep taking every slot", async () => {
+    let opened = 0;
+    for (let i = 0; i < 12; i++) {
+      if ((await handleCreate(store, {}, NOW, "1.2.3.4")).status === 201) opened += 1;
+    }
+    assert.equal(opened, CREATES_PER_HOUR, `opened ${opened}`);
+  });
+
+  test("the refusal says to come back rather than that a room is full", async () => {
+    for (let i = 0; i < CREATES_PER_HOUR; i++) await handleCreate(store, {}, NOW, "1.2.3.4");
+    const over = await handleCreate(store, {}, NOW, "1.2.3.4");
+    assert.equal(over.status, 429);
+    assert.equal((over.body as RejectedBody).reason, "no-capacity");
+  });
+
+  test("somebody else is unaffected", async () => {
+    // The flooder spends their whole allowance, and every room they open is taken back out
+    // again. Otherwise the next caller is refused for capacity and this proves nothing
+    // about who was counted.
+    for (let i = 0; i < CREATES_PER_HOUR + 3; i++) {
+      const made = await handleCreate(store, {}, NOW, "1.2.3.4");
+      if (made.status === 201) await store.remove((made.body as JoinedBody).room.key);
+    }
+    assert.equal((await handleCreate(store, {}, NOW, "1.2.3.4")).status, 429, "not limited");
+    assert.equal((await handleCreate(store, {}, NOW, "5.6.7.8")).status, 201);
   });
 });
