@@ -74,6 +74,12 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
   const result = resultLabel(state);
   const [swatches, setSwatches] = useState<Record<string, string>>({});
 
+  /*
+   * The fills are read out of the document rather than passed in, so the theme is a real
+   * input here even though nothing in the body mentions it. The first swatch follows the
+   * interface and has to move when it does.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: theme changes what is read
   useEffect(() => {
     if (result === null) return;
     // Read in an effect rather than while rendering. There is no computed style on the
@@ -81,9 +87,6 @@ export function ShareButton({ state, flipped }: ShareButtonProps) {
     const next: Record<string, string> = {};
     for (const option of CARD_BACKGROUNDS) next[option.id] = backgroundSwatch(option.id);
     setSwatches(next);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: the fills are read out of the
-    // document rather than passed in, so the theme is a real input to this even though
-    // nothing here mentions it. The first swatch follows the interface and has to move with it.
   }, [result, theme]);
 
   const release = useCallback(() => {
