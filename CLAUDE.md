@@ -10,9 +10,14 @@
 
 ## Project overview
 
-sixtyfour, a minimal chess game. One board, three round controls, and a bot at three
-difficulties. The whole product is a single screen. The design goal is a board that feels
-alive through quiet motion, and a page that shows no visible text except one number.
+sixtyfour, a minimal chess game. One board, a row of round controls, and a bot at three
+difficulties, or a friend over a shared link. The whole product is a single screen. The
+design goal is a board that feels alive through quiet motion, and a page that shows no
+visible text except one number.
+
+The control row is not a fixed set. Difficulty and side are dropped in a room, where they
+have nothing to set, and the camera exists only once a game has a result. Adding a control
+means deciding when it is absent, not only what it does.
 
 This is a public repository.
 

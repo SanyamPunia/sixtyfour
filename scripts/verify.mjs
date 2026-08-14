@@ -1750,6 +1750,50 @@ if (!hasRedis) {
        * definition, so its case is data. The markup keeps real casing everywhere, which is
        * why this checks what is painted rather than what the element contains.
        */
+      /*
+       * Playing again, which is the only control that reaches across to the other player.
+       *
+       * It goes through the server rather than clearing the board locally, so a rematch has
+       * to arrive on the board that did not press it. Nothing else in this run exercises
+       * that direction with an empty move list.
+       */
+      await winner.page.bringToFront();
+      const rematched = await winner.page
+        .evaluate(() => {
+          const button = document.querySelector('button[aria-label="Play again"]');
+          if (button === null || button.disabled) return false;
+          button.click();
+          return true;
+        })
+        .catch(() => false);
+      check("a finished game can be played again", rematched);
+
+      if (rematched) {
+        const cleared = async (page) => {
+          await page.bringToFront();
+          return await page
+            .waitForFunction(
+              () => {
+                const text = document.body.innerText.replace(/\s+/g, " ").toLowerCase();
+                if (text.includes("you win") || text.includes("you lose")) return false;
+                // Back to the start: both rooks home and nothing marked as the last move.
+                const a1 = document.querySelector('[data-sq="0"]');
+                const h8 = document.querySelector('[data-sq="119"]');
+                return (
+                  (a1?.getAttribute("aria-label") ?? "").includes("rook") &&
+                  (h8?.getAttribute("aria-label") ?? "").includes("rook")
+                );
+              },
+              { timeout: 20000 },
+            )
+            .then(() => true)
+            .catch(() => false);
+        };
+        check("the board resets for the player who asked", await cleared(winner.page));
+        const other = winner === host ? guest : host;
+        check("and for the one who did not", await cleared(other.page));
+      }
+
       await host.page.bringToFront();
       await host.page.evaluate(() => {
         const trigger = [...document.querySelectorAll("button")].find((b) =>

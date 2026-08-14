@@ -43,6 +43,10 @@ Everything the game needs is written in this repository.
   a golden-path test. `corner-shape: squircle` is Chromium only, so the path is what ships.
 - **The sound.** Three clips totalling 13.5KB, each trimmed to its audible part. Mute is
   checked in one place, so nothing can make a noise by forgetting to ask.
+- **The picture.** A finished game draws itself as a PNG for sharing, redrawn from the same
+  path data the board uses rather than screenshotted, so it is identical on every device.
+  Nine backgrounds to mount it on, and the caption colour is derived from whichever one is
+  chosen, so a mount added later cannot arrive with unreadable text on it.
 - **The rooms.** Five route handlers and a Redis. The server validates every move with the
   same engine the browser runs, because a client is a thing anyone can rewrite, and it
   resolves a move against the position's own legal list rather than trusting coordinates.

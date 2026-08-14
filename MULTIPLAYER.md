@@ -646,7 +646,17 @@ both need the patience to sit and watch nothing happen for the right length of t
 
 ---
 
-## 16. Open questions
+## 16. Open questions, as they were
+
+Every one of these was answered during the build. Kept as written because the reasoning for
+each still explains why the answer went the way it did, and the answers are recorded at the
+top of this file and in `CLAUDE.md`.
+
+Decided: the creator picks a side, a room lives 24 hours refreshed on every move, a rematch
+reuses the same room and keeps both seats, and there are no clocks, no spectators and
+nothing special for abandonment beyond a seat becoming reclaimable.
+
+### The questions
 
 1. **Who picks sides?** Simplest is the creator choosing white, black or random when making
    the room. Deciding when the second player joins needs another round trip and another

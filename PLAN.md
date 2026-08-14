@@ -1,7 +1,8 @@
 # sixtyfour, build plan
 
-A minimal chess game. One board, three round controls, a bot at three difficulties, and a
-small vocabulary of quiet animations.
+A minimal chess game. One board, a row of round controls, a bot at three difficulties, and
+a small vocabulary of quiet animations. Rooms and the shared picture came later and are
+recorded in `MULTIPLAYER.md` and in section 7's colour tokens.
 
 This file is the plan of record. Update it when a decision changes.
 
