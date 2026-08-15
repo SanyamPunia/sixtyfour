@@ -15,6 +15,9 @@ interface RoomDialogProps {
   onOpenChange: (open: boolean) => void;
   room: RoomView;
   controls: RoomControls;
+  /** Nothing to give up once the board has decided it. */
+  live: boolean;
+  onResign: () => void;
 }
 
 const CONNECTING: Record<string, string> = {
@@ -32,7 +35,14 @@ const CONNECTING: Record<string, string> = {
  * Once you are in, the dialog stops being a form and becomes the thing you show someone: a
  * key large enough to read out loud and a link to send.
  */
-export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogProps) {
+export function RoomDialog({
+  open,
+  onOpenChange,
+  room,
+  controls,
+  live,
+  onResign,
+}: RoomDialogProps) {
   const [typed, setTyped] = useState("");
   const [copied, setCopied] = useState<"link" | "key" | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -167,7 +177,19 @@ export function RoomDialog({ open, onOpenChange, room, controls }: RoomDialogPro
                 </span>
               </div>
 
-              <div className="flex justify-end border-t border-[var(--board-dark)] pt-4">
+              {/*
+                Resigning and leaving are not the same thing and sit apart for that reason.
+                Leaving gives up the seat and says nothing about the game. Resigning ends
+                it, for both people, and hands the other player a result.
+              */}
+              <div className="flex items-center justify-between border-t border-[var(--board-dark)] pt-4">
+                {live ? (
+                  <Button variant="quiet" size="dialog" onClick={onResign}>
+                    Resign
+                  </Button>
+                ) : (
+                  <span />
+                )}
                 <Button
                   variant="quiet"
                   size="dialog"

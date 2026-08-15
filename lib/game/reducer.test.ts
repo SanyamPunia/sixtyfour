@@ -9,6 +9,7 @@ import {
   type GameState,
   gameReducer,
   isHumanTurn,
+  isOver,
   outcome,
   resultLabel,
 } from "./reducer.ts";
@@ -157,6 +158,7 @@ test("entering a room takes the seat's colour and replays what has happened", ()
     type: "enterRoom",
     color: BLACK,
     moves: ["e2e4", "e7e5", "g1f3"],
+    resigned: null,
   });
 
   assert.equal(state.opponent, "room");
@@ -170,9 +172,14 @@ test("entering a room takes the seat's colour and replays what has happened", ()
 });
 
 test("a sync that agrees with the board changes nothing a player would see", () => {
-  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: [] });
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: [],
+    resigned: null,
+  });
   const moved = play(room, "e2", "e4");
-  const synced = gameReducer(moved, { type: "syncRoom", moves: ["e2e4"] });
+  const synced = gameReducer(moved, { type: "syncRoom", moves: ["e2e4"], resigned: null });
 
   assert.deepEqual(
     synced.pieces.map((p) => `${p.id}@${p.square}`).sort(),
@@ -183,12 +190,17 @@ test("a sync that agrees with the board changes nothing a player would see", () 
 });
 
 test("a sync rolls back a move the room never accepted", () => {
-  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: [] });
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: [],
+    resigned: null,
+  });
   const optimistic = play(room, "e2", "e4");
   assert.equal(optimistic.history.length, 1);
 
   // The room says that move never happened.
-  const corrected = gameReducer(optimistic, { type: "syncRoom", moves: [] });
+  const corrected = gameReducer(optimistic, { type: "syncRoom", moves: [], resigned: null });
   assert.deepEqual(corrected.history, []);
   assert.equal(corrected.position.side, WHITE, "the turn did not come back");
   assert.equal(corrected.lastMove, null);
@@ -205,12 +217,21 @@ test("a sync rolls back a move the room never accepted", () => {
 test("a sync is ignored outside a room", () => {
   // A message from a connection that has already been left must not rewrite a local game.
   const local = play(createGame(), "e2", "e4");
-  const after = gameReducer(local, { type: "syncRoom", moves: ["d2d4", "d7d5"] });
+  const after = gameReducer(local, {
+    type: "syncRoom",
+    moves: ["d2d4", "d7d5"],
+    resigned: null,
+  });
   assert.equal(after, local, "a stale room message reached a bot game");
 });
 
 test("a room game cannot be restarted or re-sided from this browser alone", () => {
-  const room = gameReducer(createGame(), { type: "enterRoom", color: WHITE, moves: ["e2e4"] });
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: ["e2e4"],
+    resigned: null,
+  });
   assert.equal(gameReducer(room, { type: "newGame" }), room, "new game cleared a shared board");
   assert.equal(
     gameReducer(room, { type: "setSide", color: BLACK }),
@@ -220,10 +241,77 @@ test("a room game cannot be restarted or re-sided from this browser alone", () =
 });
 
 test("leaving a room returns to a fresh game against the bot", () => {
-  const room = gameReducer(createGame(), { type: "enterRoom", color: BLACK, moves: ["e2e4"] });
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: BLACK,
+    moves: ["e2e4"],
+    resigned: null,
+  });
   const left = gameReducer(room, { type: "leaveRoom" });
   assert.equal(left.opponent, "bot");
   assert.deepEqual(left.history, []);
   assert.equal(left.humanColor, BLACK, "the side being played was thrown away");
   assert.notEqual(left.resetToken, room.resetToken);
+});
+
+/**
+ * Giving the game up.
+ *
+ * The only ending that is not a fact about the board, so it is the only one both players
+ * have to be *told* about rather than being able to work out by looking.
+ */
+test("a resignation ends the game for whoever gave it up", () => {
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: ["e2e4"],
+    resigned: null,
+  });
+  const gone = gameReducer(room, { type: "syncRoom", moves: ["e2e4"], resigned: WHITE });
+
+  assert.equal(isOver(gone), true, "the game carried on");
+  assert.equal(resultLabel(gone), "you resigned");
+  assert.equal(outcome(gone), "loss");
+  assert.equal(isHumanTurn(gone), false, "a resigned game was still playable");
+});
+
+test("and hands the other player a result that says why", () => {
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: BLACK,
+    moves: ["e2e4"],
+    resigned: null,
+  });
+  const won = gameReducer(room, { type: "syncRoom", moves: ["e2e4"], resigned: WHITE });
+
+  // "you win" on its own, with the pieces still even, is the one ending a player cannot
+  // explain to themselves and is indistinguishable from a bug.
+  assert.equal(resultLabel(won), "you win, they resigned");
+  assert.equal(outcome(won), "win");
+});
+
+test("a resigned board refuses to move", () => {
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: [],
+    resigned: null,
+  });
+  const gone = gameReducer(room, { type: "syncRoom", moves: [], resigned: WHITE });
+  const poked = gameReducer(gone, { type: "select", square: parseSquare("e2") });
+  assert.equal(poked, gone, "a piece could still be picked up");
+});
+
+test("a rematch clears it", () => {
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: ["e2e4"],
+    resigned: null,
+  });
+  const gone = gameReducer(room, { type: "syncRoom", moves: ["e2e4"], resigned: WHITE });
+  // The server clears it and the board follows, or the new game arrives already lost.
+  const again = gameReducer(gone, { type: "syncRoom", moves: [], resigned: null });
+  assert.equal(isOver(again), false);
+  assert.equal(resultLabel(again), null);
 });

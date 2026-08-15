@@ -81,7 +81,7 @@ export function ControlBar({
           />
         </>
       )}
-      <RoomButton room={room} controls={roomControls} />
+      <RoomButton room={room} controls={roomControls} live={inRoom && !attention} />
       {/* Only rendered once there is a result, so it appears exactly when it is useful. */}
       <ShareButton state={state} flipped={flipped} />
       {inRoom ? (

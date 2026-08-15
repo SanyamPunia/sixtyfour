@@ -28,6 +28,7 @@ import {
   ROOM_IDLE_MS,
   rematch,
   replay,
+  resignRoom,
   snapshot,
 } from "./service.ts";
 import type { RoomStore } from "./store.ts";
@@ -227,6 +228,34 @@ export async function handleLeave(
   if (token === undefined) return refuse(STATUS["not-your-seat"], "not-your-seat");
 
   const result = await leaveRoom(store, { key, token, now });
+  if (!result.ok) return refuse(STATUS[result.reason], result.reason, result.snapshot);
+  return {
+    status: 200,
+    body: {
+      protocol: PROTOCOL,
+      type: "state",
+      room: result.snapshot,
+      presence: await store.presence(key, now),
+    },
+  };
+}
+
+/**
+ * Gives the game up.
+ *
+ * Takes a token like a move does, because it ends the game for both people and only the two
+ * holding a seat may do that.
+ */
+export async function handleResign(
+  store: RoomStore,
+  key: string,
+  body: unknown,
+  now: number,
+): Promise<ApiResult> {
+  const token = text(body, "token");
+  if (token === undefined) return refuse(STATUS["not-your-seat"], "not-your-seat");
+
+  const result = await resignRoom(store, { key, token, now });
   if (!result.ok) return refuse(STATUS[result.reason], result.reason, result.snapshot);
   return {
     status: 200,

@@ -8,8 +8,8 @@ import {
   checkedKingSquare,
   createGame,
   gameReducer,
-  isGameOver,
   isHumanTurn,
+  isOver,
   matedKingSquare,
   outcome,
   resultLabel,
@@ -118,7 +118,7 @@ export function Game() {
             shakeToken={state.shakeToken}
             resetToken={state.resetToken}
             pendingPromotion={state.pendingPromotion}
-            over={isGameOver(state.status)}
+            over={isOver(state)}
             celebrate={outcome(state) === "win"}
             onPromote={(piece) => dispatch({ type: "promote", piece })}
             onCancelPromotion={() => dispatch({ type: "cancelPromotion" })}
@@ -129,7 +129,7 @@ export function Game() {
             difficulty={state.difficulty}
             thinking={state.thinking}
             moveCount={state.history.length}
-            attention={isGameOver(state.status)}
+            attention={isOver(state)}
             humanColor={state.humanColor}
             muted={muted}
             inRoom={inRoom}

@@ -3,6 +3,7 @@
 import { UsersIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button.tsx";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog.tsx";
 import { Tooltip } from "@/components/ui/tooltip.tsx";
 import { PresenceDot } from "./presence-dot.tsx";
 import { RoomDialog } from "./room-dialog.tsx";
@@ -11,6 +12,8 @@ import type { RoomControls, RoomView } from "./use-room.ts";
 interface RoomButtonProps {
   room: RoomView;
   controls: RoomControls;
+  /** Whether the game can still be given up. */
+  live: boolean;
 }
 
 /**
@@ -21,8 +24,9 @@ interface RoomButtonProps {
  * There is no dot outside a room, so the control looks like every other one until it has
  * something to report.
  */
-export function RoomButton({ room, controls }: RoomButtonProps) {
+export function RoomButton({ room, controls, live }: RoomButtonProps) {
   const [open, setOpen] = useState(false);
+  const [confirmingResign, setConfirmingResign] = useState(false);
   const inside = room.key !== null;
 
   return (
@@ -48,7 +52,35 @@ export function RoomButton({ room, controls }: RoomButtonProps) {
         Rendered here beside the trigger rather than inside it, and mounted whether or not
         it is open, so closing the dialog cannot unmount the thing that owns its state.
       */}
-      <RoomDialog open={open} onOpenChange={setOpen} room={room} controls={controls} />
+      <RoomDialog
+        open={open}
+        onOpenChange={setOpen}
+        room={room}
+        controls={controls}
+        live={live}
+        onResign={() => {
+          // The room dialog closes first. Two stacked dialogs trap focus in the wrong one,
+          // and the confirm has to outlive the thing that asked for it.
+          setOpen(false);
+          setConfirmingResign(true);
+        }}
+      />
+
+      {/*
+        At this component's root rather than inside the room dialog, which unmounts when it
+        closes and would take the confirm with it.
+      */}
+      <ConfirmDialog
+        open={confirmingResign}
+        onOpenChange={setConfirmingResign}
+        title="Resign this game?"
+        description="Your opponent wins immediately. There is no undo, and the only way back to a game is a rematch."
+        confirmLabel="Resign"
+        onConfirm={() => {
+          controls.resign();
+          setConfirmingResign(false);
+        }}
+      />
     </>
   );
 }

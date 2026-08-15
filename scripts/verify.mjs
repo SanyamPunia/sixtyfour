@@ -1358,6 +1358,62 @@ if (!hasRedis) {
       }
 
       /*
+       * Giving the game up, and what each player is left looking at.
+       *
+       * The point is not that the request succeeds. It is that both boards end up in a
+       * state their owner can explain: the one who resigned is told they did, and the one
+       * who did not is told they won and why. "You win" on its own, with the pieces still
+       * even, is indistinguishable from a bug.
+       */
+      await guest.page.bringToFront();
+      const resigned = await guest.page.evaluate(async () => {
+        const trigger = [...document.querySelectorAll("button")].find((b) =>
+          (b.getAttribute("aria-label") ?? "").startsWith("Room "),
+        );
+        trigger?.click();
+        await new Promise((r) => setTimeout(r, 400));
+        const give = [...document.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Resign",
+        );
+        if (give === undefined) return "no resign control";
+        give.click();
+        await new Promise((r) => setTimeout(r, 500));
+        // The confirm, which is deliberately a second press.
+        const confirm = [...document.querySelectorAll("button")].find(
+          (b) => b.textContent?.trim() === "Resign",
+        );
+        if (confirm === undefined) return "no confirmation";
+        confirm.click();
+        return "asked";
+      });
+      check("a live game can be given up", resigned === "asked", resigned);
+
+      const says = async (page, want) =>
+        await page
+          .waitForFunction(
+            (text) => document.body.innerText.replace(/\s+/g, " ").toLowerCase().includes(text),
+            { timeout: 20000 },
+            want,
+          )
+          .then(() => true)
+          .catch(() => false);
+
+      await guest.page.bringToFront();
+      check("the player who resigned is told so", await says(guest.page, "you resigned"));
+      await host.page.bringToFront();
+      check(
+        "and the other one is told they won, and why",
+        await says(host.page, "you win, they resigned"),
+      );
+
+      // Back to a playable game, or everything below this is testing a finished one.
+      await host.page.bringToFront();
+      await host.page.evaluate(() => {
+        document.querySelector('button[aria-label="Play again"]')?.click();
+      });
+      await new Promise((r) => setTimeout(r, 2500));
+
+      /*
        * A finished game, and the picture it produces.
        *
        * Fool's mate, by clicking exact squares rather than whatever move the board offers

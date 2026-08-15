@@ -48,6 +48,15 @@ export interface GameState {
   shakeToken: number;
   /** Bumped on a new game, so the board can play the reset once and then stop. */
   resetToken: number;
+  /**
+   * The colour that gave up, or null.
+   *
+   * Held beside `status` rather than inside it. Every other ending is something
+   * `lib/chess` works out by looking at the pieces, and no arrangement of pieces says
+   * that somebody decided they had lost, so this is the one outcome the board is told
+   * about rather than deriving.
+   */
+  resigned: Color | null;
   /** True between the human's move and the bot's reply. */
   thinking: boolean;
   /**
@@ -67,8 +76,8 @@ export type GameAction =
   | { type: "setDifficulty"; difficulty: Difficulty }
   | { type: "newGame" }
   | { type: "setSide"; color: Color }
-  | { type: "enterRoom"; color: Color; moves: string[] }
-  | { type: "syncRoom"; moves: string[] }
+  | { type: "enterRoom"; color: Color; moves: string[]; resigned: Color | null }
+  | { type: "syncRoom"; moves: string[]; resigned: Color | null }
   | { type: "leaveRoom" };
 
 export function createGame(
@@ -96,6 +105,7 @@ export function createGame(
     resetToken: 0,
     thinking: false,
     pendingPromotion: null,
+    resigned: null,
   };
 }
 
@@ -180,7 +190,7 @@ function fromMoves(base: GameState, moves: readonly string[]): GameState {
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "select": {
-      if (isGameOver(state.status) || state.thinking) return state;
+      if (isOver(state) || state.thinking) return state;
       // The picker owns the board until it is answered.
       if (state.pendingPromotion !== null) return state;
 
@@ -241,7 +251,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case "grab": {
       // Selection without the toggle. `select` deselects when you tap the held piece
       // again, which during a drag would drop the piece you are still holding.
-      if (isGameOver(state.status) || state.thinking) return state;
+      if (isOver(state) || state.thinking) return state;
       if (state.pendingPromotion !== null) return state;
       if (state.selected === action.square) return state;
       const piece = at(state.position.board, action.square);
@@ -287,13 +297,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case "enterRoom":
       return {
         ...fromMoves(createGame(state.difficulty, action.color, "room"), action.moves),
+        resigned: action.resigned,
         resetToken: state.resetToken + 1,
       };
 
     case "syncRoom":
       // Ignored outside a room. A late message from a connection that has since been left
       // must not reach in and rewrite a local game.
-      return state.opponent === "room" ? fromMoves(state, action.moves) : state;
+      return state.opponent === "room"
+        ? { ...fromMoves(state, action.moves), resigned: action.resigned }
+        : state;
 
     case "leaveRoom":
       return {
@@ -318,7 +331,7 @@ export function matedKingSquare(state: GameState): Square | null {
 
 export function isHumanTurn(state: GameState): boolean {
   return (
-    !isGameOver(state.status) &&
+    !isOver(state) &&
     state.position.side === state.humanColor &&
     !state.thinking &&
     state.pendingPromotion === null
@@ -332,7 +345,23 @@ export function isHumanTurn(state: GameState): boolean {
  * leaves a player who has just stalemated a lone king with no idea what happened, which is
  * the single most surprising way a won game ends.
  */
+/** Over on the board, or over because somebody gave it up. */
+export function isOver(state: GameState): boolean {
+  return state.resigned !== null || isGameOver(state.status);
+}
+
 export function resultLabel(state: GameState): string | null {
+  /*
+   * Named before the board is consulted. A resignation can happen in any position, and the
+   * position it happened in usually has nothing to say.
+   *
+   * The winner is told how they won, not only that they did. A board that simply stops and
+   * says "you win" with the pieces still even is the one ending a player cannot explain to
+   * themselves, and it is indistinguishable from a bug.
+   */
+  if (state.resigned !== null) {
+    return state.resigned === state.humanColor ? "you resigned" : "you win, they resigned";
+  }
   const yourTurn = state.position.side === state.humanColor;
   switch (state.status) {
     case "checkmate":
@@ -357,6 +386,9 @@ export function resultLabel(state: GameState): string | null {
  * position rather than tracking a winner as the game runs.
  */
 export function outcome(state: GameState): "win" | "loss" | "draw" | null {
+  if (state.resigned !== null) {
+    return state.resigned === state.humanColor ? "loss" : "win";
+  }
   switch (state.status) {
     case "checkmate":
       return state.position.side === state.humanColor ? "loss" : "win";

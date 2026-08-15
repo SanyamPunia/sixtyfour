@@ -92,7 +92,13 @@ export function snapshot(room: Room, status: GameStatus): RoomSnapshot {
     moves: [...room.moves],
     taken: { white: room.seats.white !== null, black: room.seats.black !== null },
     status,
+    resigned: room.resigned,
   };
+}
+
+/** Over on the board, or over because somebody said so. */
+export function roomIsOver(room: Room, status: GameStatus): boolean {
+  return room.resigned !== null || isGameOver(status);
 }
 
 function seatOfToken(room: Room, token: string): Seat | null {
@@ -163,6 +169,7 @@ export async function createRoom(
       version: 0,
       moves: [],
       seats: { white: null, black: null, [seat]: token } as Room["seats"],
+      resigned: null,
       createdAt: options.now,
       expiresAt: options.now + ROOM_IDLE_MS,
     };
@@ -297,7 +304,7 @@ export async function playMove(
     return { ok: false, reason: "stale", snapshot: view };
   }
 
-  if (isGameOver(status)) return { ok: false, reason: "game-over", snapshot: view };
+  if (roomIsOver(room, status)) return { ok: false, reason: "game-over", snapshot: view };
   if (position.side !== seatColor(seat)) {
     return { ok: false, reason: "not-your-turn", snapshot: view };
   }
@@ -355,7 +362,7 @@ export async function rematch(
   }
 
   const status = replay(room.moves)?.status ?? "playing";
-  if (!isGameOver(status)) {
+  if (!roomIsOver(room, status)) {
     return { ok: false, reason: "not-your-turn", snapshot: snapshot(room, status) };
   }
 
@@ -363,6 +370,8 @@ export async function rematch(
     ...room,
     version: room.version + 1,
     moves: [],
+    // Cleared, or the new game would arrive already lost.
+    resigned: null,
     expiresAt: options.now + ROOM_IDLE_MS,
   };
   if (!(await store.swap(next, room.version))) {
@@ -411,6 +420,50 @@ export async function leaveRoom(
 
     if (await store.swap(next, room.version)) {
       const status = replay(next.moves)?.status ?? "playing";
+      return { ok: true, snapshot: snapshot(next, status), uci: "", seat };
+    }
+  }
+  return { ok: false, reason: "stale", snapshot: null };
+}
+
+/**
+ * Gives the game up.
+ *
+ * The only ending that is not a fact about the board. Everything else here is decided by
+ * `lib/chess` looking at an arrangement of pieces, and no arrangement says that somebody
+ * decided they had lost, so this is the one outcome the room has to remember for itself.
+ *
+ * Without it a beaten player's only move is to close the tab, and the winner is left
+ * watching an indicator that says "away" forever: no result, no picture, no rematch. The
+ * game does not end, it just stops.
+ */
+export async function resignRoom(
+  store: RoomStore,
+  options: { key: string; token: string; now: number },
+): Promise<MoveResult> {
+  for (let attempt = 0; attempt < SWAP_ATTEMPTS; attempt++) {
+    const room = await store.get(options.key);
+    if (room === null || room.expiresAt <= options.now) {
+      return { ok: false, reason: "not-found", snapshot: null };
+    }
+    const seat = seatOfToken(room, options.token);
+    if (seat === null) {
+      return { ok: false, reason: "not-your-seat", snapshot: snapshot(room, "playing") };
+    }
+
+    const status = replay(room.moves)?.status ?? "playing";
+    // Nothing to give up in a game that is already decided.
+    if (roomIsOver(room, status)) {
+      return { ok: false, reason: "game-over", snapshot: snapshot(room, status) };
+    }
+
+    const next: Room = {
+      ...room,
+      version: room.version + 1,
+      resigned: seat,
+      expiresAt: options.now + ROOM_IDLE_MS,
+    };
+    if (await store.swap(next, room.version)) {
       return { ok: true, snapshot: snapshot(next, status), uci: "", seat };
     }
   }

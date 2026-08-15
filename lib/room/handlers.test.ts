@@ -20,11 +20,12 @@ import {
   handleMove,
   handlePoll,
   handleRematch,
+  handleResign,
   readKey,
 } from "./handlers.ts";
 import { MemoryRoomStore } from "./memory-store.ts";
 import { AWAY_MS } from "./presence.ts";
-import type { JoinedBody, RejectedBody, StateBody } from "./protocol.ts";
+import type { JoinedBody, RejectedBody, Room, StateBody } from "./protocol.ts";
 import { LEASE_REFRESH_MS, ROOM_CAP, ROOM_IDLE_MS } from "./service.ts";
 
 const NOW = 1_700_000_000_000;
@@ -521,5 +522,64 @@ describe("how fast rooms can be made", () => {
     }
     assert.equal((await handleCreate(store, {}, NOW, "1.2.3.4")).status, 429, "not limited");
     assert.equal((await handleCreate(store, {}, NOW, "5.6.7.8")).status, 201);
+  });
+});
+
+/**
+ * Giving the game up.
+ *
+ * The only ending the engine cannot work out for itself, and the only one a player could
+ * previously reach only by closing the tab, which left the winner watching an indicator
+ * that said "away" forever and never gave them a result.
+ */
+describe("resigning", () => {
+  test("ends the game and names who gave it up", async () => {
+    const { key, host, guest } = await openRoom("white");
+    const result = await handleResign(store, key, { token: host.token }, NOW);
+    assert.equal(result.status, 200);
+    assert.equal((result.body as StateBody).room.resigned, "white");
+
+    // And the other player sees it on their next poll, without having moved.
+    const seen = await handlePoll(store, key, "black", NOW);
+    assert.equal((seen.body as StateBody).room.resigned, "white");
+    assert.equal(guest.room.resigned, null, "it was set before anyone resigned");
+  });
+
+  test("the board is closed to both of them afterwards", async () => {
+    const { key, host, guest } = await openRoom("white");
+    await handleResign(store, key, { token: host.token }, NOW);
+
+    const at = ((await store.get(key)) as Room).version;
+    for (const [who, token] of [
+      ["the one who resigned", host.token],
+      ["the one who did not", guest.token],
+    ] as const) {
+      const move = await handleMove(store, key, { token, uci: "e2e4", at }, NOW);
+      assert.equal((move.body as RejectedBody).reason, "game-over", `${who} could still move`);
+    }
+  });
+
+  test("a stranger cannot resign someone else's game", async () => {
+    const { key } = await openRoom("white");
+    assert.equal((await handleResign(store, key, { token: "nope" }, NOW)).status, 403);
+    assert.equal((await store.get(key))?.resigned, null);
+  });
+
+  test("it cannot happen twice, or after the board has decided", async () => {
+    const { key, host } = await openRoom("white");
+    await handleResign(store, key, { token: host.token }, NOW);
+    const again = await handleResign(store, key, { token: host.token }, NOW);
+    assert.equal(again.status, 409);
+    assert.equal((again.body as RejectedBody).reason, "game-over");
+  });
+
+  test("a rematch clears it, or the next game starts already lost", async () => {
+    const { key, host } = await openRoom("white");
+    await handleResign(store, key, { token: host.token }, NOW);
+
+    const again = await handleRematch(store, key, { token: host.token }, NOW);
+    assert.equal(again.status, 200, "a resigned game could not be restarted");
+    assert.equal((again.body as StateBody).room.resigned, null);
+    assert.deepEqual((again.body as StateBody).room.moves, []);
   });
 });

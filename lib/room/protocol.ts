@@ -34,6 +34,14 @@ export interface SeatMap<T> {
  */
 export interface Room {
   key: string;
+  /**
+   * The seat that gave up, or null.
+   *
+   * Kept on the room rather than derived from the board, because a resignation is not a
+   * property of a position. `lib/chess` can look at any arrangement of pieces and say
+   * whether it is mate, and it can never say whether somebody decided they had lost.
+   */
+  resigned: Seat | null;
   /** Bumped on every accepted move. Drives the compare-and-swap and the client's resume. */
   version: number;
   moves: string[];
@@ -49,6 +57,8 @@ export interface RoomSnapshot {
   moves: string[];
   taken: SeatMap<boolean>;
   status: GameStatus;
+  /** The seat that gave up. A game can end this way with nothing wrong on the board. */
+  resigned: Seat | null;
 }
 
 /**

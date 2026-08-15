@@ -38,6 +38,7 @@ function room(key: string, version = 0, moves: string[] = []): Room {
     version,
     moves,
     seats: { white: "w-secret", black: null },
+    resigned: null,
     createdAt: NOW,
     expiresAt: NOW + 60_000,
   };

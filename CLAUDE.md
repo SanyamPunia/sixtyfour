@@ -89,7 +89,14 @@ Four things are worth knowing before changing any of it.
    free. The cap check and the write are one atomic step in the store, because a handler that
    counts and then writes lets two simultaneous creates make a sixth, and there is no single
    process to serialise them.
-4. **A version guards every write.** Taking a seat advances it as well as moving does. A
+4. **Resignation is the one ending the engine cannot work out.** `lib/chess` can look at any
+   arrangement of pieces and say whether it is mate, a stalemate or a draw, and no
+   arrangement says that somebody decided they had lost. So it lives on the room record and
+   on `GameState` beside `status`, never inside it, and `isOver` is the question to ask
+   rather than `isGameOver`. Both players are told what happened: the one who gave up reads
+   "you resigned", and the other reads "you win, they resigned", because a board that stops
+   and says "you win" with the pieces still even is indistinguishable from a bug.
+5. **A version guards every write.** Taking a seat advances it as well as moving does. A
    poll is what tells the other player, so nothing needs to push that update, but the rule
    still holds: a move sent against a version the room has passed is refused rather than
    applied to a board the sender never saw.

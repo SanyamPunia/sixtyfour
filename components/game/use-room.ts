@@ -58,6 +58,7 @@ export interface RoomControls {
   join: (key: string) => void;
   leave: () => void;
   rematch: () => void;
+  resign: () => void;
   dismissProblem: () => void;
 }
 
@@ -95,6 +96,11 @@ function writeRoomToUrl(key: string | null): void {
 
 function seatColor(seat: Seat): Color {
   return seat === "white" ? WHITE : BLACK;
+}
+
+/** The colour that gave up, in the terms the board thinks in. */
+function resignedColor(seat: Seat | null): Color | null {
+  return seat === null ? null : seatColor(seat);
 }
 
 function sameMoves(a: readonly string[], b: readonly string[]): boolean {
@@ -163,13 +169,18 @@ export function useRoom(
         // The first join sets the seat colour and starts the game. Coming back keeps both
         // and only corrects the board, so a reload does not read as starting over.
         if (enteredRef.current) {
-          dispatchRef.current({ type: "syncRoom", moves: [...message.room.moves] });
+          dispatchRef.current({
+            type: "syncRoom",
+            moves: [...message.room.moves],
+            resigned: resignedColor(message.room.resigned),
+          });
         } else {
           enteredRef.current = true;
           dispatchRef.current({
             type: "enterRoom",
             color: seatColor(message.seat),
             moves: [...message.room.moves],
+            resigned: resignedColor(message.room.resigned),
           });
         }
         return;
@@ -186,12 +197,16 @@ export function useRoom(
         versionRef.current = message.room.version;
         sentRef.current = null;
 
+        const resigned = resignedColor(message.room.resigned);
         const local = stateRef.current.history.map(toUci);
-        if (sameMoves(local, authoritative)) return;
+        // A resignation changes no move, so the board would otherwise agree with the server
+        // and nothing would be applied. It has to be checked separately from the move list.
+        if (sameMoves(local, authoritative) && resigned === stateRef.current.resigned) return;
 
         // One move ahead of what is on screen, and everything before it agrees. Play it as
         // a move so it animates, rather than rebuilding the board around it.
         if (
+          resigned === stateRef.current.resigned &&
           authoritative.length === local.length + 1 &&
           sameMoves(local, authoritative.slice(0, local.length))
         ) {
@@ -202,7 +217,7 @@ export function useRoom(
             return;
           }
         }
-        dispatchRef.current({ type: "syncRoom", moves: authoritative });
+        dispatchRef.current({ type: "syncRoom", moves: authoritative, resigned });
         return;
       }
 
@@ -212,7 +227,11 @@ export function useRoom(
           versionRef.current = message.room.version;
           // Whatever this browser believed, the room says otherwise. Taking the room's word
           // for it is the entire reason a refusal carries a board.
-          dispatchRef.current({ type: "syncRoom", moves: [...message.room.moves] });
+          dispatchRef.current({
+            type: "syncRoom",
+            moves: [...message.room.moves],
+            resigned: resignedColor(message.room.resigned),
+          });
         }
         sentRef.current = null;
 
@@ -320,6 +339,13 @@ export function useRoom(
     setStatus("idle");
     dispatchRef.current({ type: "leaveRoom" });
   }, []);
+
+  const resign = useCallback(() => {
+    const roomKey = keyRef.current;
+    const token = tokenRef.current;
+    if (roomKey === null || token === null) return;
+    void call(`/${roomKey}/resign`, { token });
+  }, [call]);
 
   const rematch = useCallback(() => {
     const roomKey = keyRef.current;
@@ -474,6 +500,6 @@ export function useRoom(
           ? null
           : `${window.location.origin}/?${ROOM_PARAM}=${key}`,
     },
-    { create, join, leave, rematch, dismissProblem: () => setProblem(null) },
+    { create, join, leave, rematch, resign, dismissProblem: () => setProblem(null) },
   ];
 }
