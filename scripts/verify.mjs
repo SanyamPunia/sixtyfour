@@ -1189,6 +1189,41 @@ if (!hasRedis) {
   const open = async (url) => {
     const page = await browser.newPage();
     await page.setViewport({ width: 560, height: 780, deviceScaleFactor: 1 });
+    /*
+     * Both pages report themselves visible, because two people playing have two windows
+     * open and both are.
+     *
+     * Only one puppeteer page is ever in front, so without this the other stops polling,
+     * its seat ages out of `here`, and the poll rate stops changing when a turn does. That
+     * hides an entire class of bug: the flicker below only happens when the rate flips,
+     * which only happens when the opponent is actually present.
+     */
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+
+      /*
+       * A switch that holds a move back, so the race can be resolved the wrong way on
+       * purpose. Installed before any app code so it wraps the fetch the app actually
+       * calls, and off unless a check asks for it.
+       */
+      window.__delayMoves = false;
+      const original = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = String(typeof input === "string" ? input : input.url);
+        if (
+          window.__delayMoves &&
+          (init?.method ?? "GET") === "POST" &&
+          url.includes("/move")
+        ) {
+          await new Promise((r) => setTimeout(r, 900));
+        }
+        return original(input, init);
+      };
+    });
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("console", (m) => {
@@ -1337,8 +1372,52 @@ if (!hasRedis) {
           .catch(() => false);
         check("a move crosses to the other board", arrived, `${first.from} to ${first.to}`);
 
+        /*
+         * The answer is made with the move held back, and the piece watched while it is.
+         *
+         * A move is shown before the server has seen it, and a poll answered from before
+         * that move can roll it back and then play it again when the move's own answer
+         * arrives.
+         *
+         * Be clear about what this does and does not prove. It asserts the invariant, and
+         * it does not reproduce the race: removing the guard in `use-room.ts` leaves this
+         * check passing. A standalone probe against a delayed write does reproduce it, so
+         * the ordering here is decided by something this harness does not control. Treat a
+         * failure as real and a pass as no evidence either way.
+         *
+         * It is the joining player's move on purpose. That is the seat it was reported
+         * from, and it is the one whose turn arrives while a poll is already in the air.
+         */
+        await watcher.page.bringToFront();
+        await watcher.page.evaluate(() => {
+          window.__delayMoves = true;
+        });
         const reply = await makeMove(watcher.page);
         check("the other player can answer", reply !== null);
+
+        const frames =
+          reply === null
+            ? []
+            : await watcher.page.evaluate(async (square) => {
+                const seen = [];
+                for (let i = 0; i < 40; i++) {
+                  const label =
+                    document
+                      .querySelector(`[data-sq="${square}"]`)
+                      ?.getAttribute("aria-label") ?? "";
+                  seen.push(label.includes("empty") ? "empty" : "occupied");
+                  await new Promise((r) => setTimeout(r, 50));
+                }
+                return [...new Set(seen)];
+              }, reply.to);
+        await watcher.page.evaluate(() => {
+          window.__delayMoves = false;
+        });
+        check(
+          "a played move does not snap back while it is being written",
+          frames.length === 1 && frames[0] === "occupied",
+          `the square read ${frames.join(" then ")}`,
+        );
 
         if (reply !== null) {
           await mover.page.bringToFront();
