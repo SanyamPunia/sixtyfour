@@ -62,6 +62,38 @@ export interface RoomControls {
   dismissProblem: () => void;
 }
 
+/**
+ * A running account of one player's moves, off unless it is asked for.
+ *
+ * The bug this exists for only happens with a real network in the way: two requests are in
+ * the air and the older one lands second. Nothing reproduces that on a machine talking to
+ * itself, so the only way to see it is from the browser it actually happens in.
+ *
+ * Turned on with `?debug=room` in the address bar, or by setting `sixtyfour:debug` to
+ * `room` in local storage, which survives a reload. Off, this costs one boolean read.
+ */
+function debugging(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (new URLSearchParams(window.location.search).get("debug") === "room") return true;
+    return window.localStorage.getItem("sixtyfour:debug") === "room";
+  } catch {
+    return false;
+  }
+}
+
+const started = typeof performance === "undefined" ? 0 : performance.now();
+
+/** Every line carries the time since load, because the whole story here is ordering. */
+function log(what: string, detail: Record<string, unknown> = {}): void {
+  if (!debugging()) return;
+  const at = `${Math.round(performance.now() - started)}ms`.padStart(7);
+  const rest = Object.entries(detail)
+    .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .join(" ");
+  console.log(`[room ${at}] ${what}${rest === "" ? "" : `  ${rest}`}`);
+}
+
 const NOBODY: SeatMap<Presence> = { white: "gone", black: "gone" };
 
 const REFUSALS: Record<RejectReason, string> = {
@@ -140,6 +172,8 @@ export function useRoom(
 
   const stateRef = useRef(state);
   stateRef.current = state;
+  /** How fast to ask. Held in a ref so a change of pace does not restart the loop. */
+  const waitingRef = useRef(false);
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
 
@@ -151,6 +185,11 @@ export function useRoom(
 
     switch (message.type) {
       case "joined": {
+        log("joined", {
+          seat: message.seat,
+          version: message.room.version,
+          moves: message.room.moves.length,
+        });
         keyRef.current = message.room.key;
         seatRef.current = message.seat;
         tokenRef.current = message.token;
@@ -189,6 +228,31 @@ export function useRoom(
       case "state": {
         setPresence(message.presence);
         setStatus("connected");
+
+        /*
+         * A poll can be answered from before a move this browser has already sent.
+         *
+         * Applying it rolls the piece back to where it started, and the answer to the move
+         * itself then plays it again a moment later. The move was never in doubt: it is
+         * simply that two requests were in the air and the older one landed second.
+         *
+         * So while a move is unacknowledged, a snapshot that is not past the version we
+         * already hold carries no news and is dropped. The move's own answer, or the next
+         * poll after it, is what moves the board on.
+         */
+        log("state in", {
+          version: message.room.version,
+          moves: message.room.moves.length,
+          holding: versionRef.current,
+          onScreen: stateRef.current.history.length,
+          awaiting: sentRef.current ?? "none",
+        });
+
+        if (sentRef.current !== null && message.room.version <= versionRef.current) {
+          log("  dropped, not newer than what we hold and a move is unanswered");
+          return;
+        }
+
         const authoritative = [...message.room.moves];
         // Set before dispatching, not after. The send effect compares the board against
         // this, and if it still held the old list it would take the move that just arrived
@@ -201,7 +265,10 @@ export function useRoom(
         const local = stateRef.current.history.map(toUci);
         // A resignation changes no move, so the board would otherwise agree with the server
         // and nothing would be applied. It has to be checked separately from the move list.
-        if (sameMoves(local, authoritative) && resigned === stateRef.current.resigned) return;
+        if (sameMoves(local, authoritative) && resigned === stateRef.current.resigned) {
+          log("  agrees with the board, nothing to do");
+          return;
+        }
 
         // One move ahead of what is on screen, and everything before it agrees. Play it as
         // a move so it animates, rather than rebuilding the board around it.
@@ -213,15 +280,28 @@ export function useRoom(
           const uci = authoritative[authoritative.length - 1] as string;
           const move = fromUci(stateRef.current.position, uci);
           if (move !== null) {
+            log("  playing one move forward", { uci });
             dispatchRef.current({ type: "play", move });
             return;
           }
         }
+        // The line to look for. A rebuild that is shorter than the board is the rollback.
+        log(
+          authoritative.length < local.length
+            ? "  REBUILDING BACKWARDS, this is the snap back"
+            : "  rebuilding from the server's list",
+          { was: local.length, now: authoritative.length },
+        );
         dispatchRef.current({ type: "syncRoom", moves: authoritative, resigned });
         return;
       }
 
       case "rejected": {
+        log("rejected", {
+          reason: message.reason,
+          version: message.room?.version ?? "none",
+          moves: message.room?.moves.length ?? "none",
+        });
         if (message.room !== null) {
           confirmedRef.current = [...message.room.moves];
           versionRef.current = message.room.version;
@@ -267,6 +347,7 @@ export function useRoom(
   /** One call, one answer, fed through the same handler as everything else. */
   const call = useCallback(
     async (path: string, body: unknown): Promise<boolean> => {
+      log("sending", { path, body: JSON.stringify(body).slice(0, 80) });
       try {
         const response = await fetch(`/api/rooms${path}`, {
           method: "POST",
@@ -276,6 +357,16 @@ export function useRoom(
         handle((await response.json()) as ApiResponse);
         return true;
       } catch {
+        /*
+         * The move is no longer in the air, so it must stop counting as such.
+         *
+         * A snapshot is ignored while one is unacknowledged, and a request that failed
+         * outright is never going to acknowledge anything. Leaving the marker set would
+         * make every later poll look stale and freeze the board on a dropped connection.
+         * Clearing it also lets the same move be sent again, which is what should happen.
+         */
+        log("send failed", { path });
+        sentRef.current = null;
         setStatus("reconnecting");
         return false;
       }
@@ -381,6 +472,7 @@ export function useRoom(
 
     const uci = toUci(last);
     if (sentRef.current === uci) return;
+    log("played locally", { uci, at: versionRef.current, onScreen: local.length });
     sentRef.current = uci;
     void call(`/${roomKey}/move`, { token, uci, at: versionRef.current });
   }, [state.history, state.opponent, call]);
@@ -396,6 +488,7 @@ export function useRoom(
     seat !== null &&
     (presence[seat === "white" ? "black" : "white"] !== "here" ||
       (!isGameOver(state.status) && state.position.side !== state.humanColor));
+  waitingRef.current = waitingOnThem;
 
   useEffect(() => {
     if (key === null || seat === null || status === "refused") return;
@@ -410,8 +503,12 @@ export function useRoom(
         timer = setTimeout(() => void tick(), POLL_QUIET_MS);
         return;
       }
-      let delay = waitingOnThem ? POLL_WAITING_MS : POLL_QUIET_MS;
+      // Read through a ref. As a dependency it tore the loop down and started a new one on
+      // every turn, which fired a poll the instant a move was made and before it had been
+      // written, and that is the answer that used to roll the piece back.
+      let delay = waitingRef.current ? POLL_WAITING_MS : POLL_QUIET_MS;
       try {
+        log("polling", { every: `${delay}ms`, holding: versionRef.current });
         const response = await fetch(`/api/rooms/${key}?seat=${seat}`, {
           cache: "no-store",
         });
@@ -438,7 +535,7 @@ export function useRoom(
       if (timer !== null) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [key, seat, status, waitingOnThem, handle]);
+  }, [key, seat, status, handle]);
 
   /**
    * A shared link lands here. Joining on arrival is the whole point of the link.
