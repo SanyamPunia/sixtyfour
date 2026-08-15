@@ -16,6 +16,13 @@ interface SquareProps extends SquareState {
   square: SquareIndex;
   label: string;
   dark: boolean;
+  /**
+   * The side facing the other square of the same move, when the two are touching.
+   *
+   * Screen-relative, so it is worked out after the board has been turned round rather than
+   * from the files and ranks.
+   */
+  seam?: "Top" | "Right" | "Bottom" | "Left";
   movable: boolean;
   onSelect: (square: SquareIndex) => void;
   /** Reports the hovered square so the board can mark the piece sitting on it. */
@@ -53,6 +60,7 @@ export function Square({
   onArrowKey,
   onPointerDown,
   grabbable,
+  seam,
 }: SquareProps) {
   return (
     <button
@@ -78,7 +86,13 @@ export function Square({
         <span
           aria-hidden="true"
           className="absolute inset-0"
-          style={{ background: "var(--sq-lastmove)" }}
+          style={{
+            background: "var(--sq-lastmove)",
+            // One edge, and only when the other marked square is against it.
+            ...(seam === undefined
+              ? {}
+              : { [`border${seam}`]: "1px solid var(--sq-lastmove-seam)" }),
+          }}
         />
       )}
       {selected && (

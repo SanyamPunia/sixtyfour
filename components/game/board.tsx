@@ -13,7 +13,7 @@ import type {
   Square as SquareIndex,
 } from "@/lib/chess/types.ts";
 import { EMPTY, WHITE } from "@/lib/chess/types.ts";
-import { type PieceView, squareAt } from "@/lib/game/piece-state.ts";
+import { columnOf, type PieceView, rowOf, squareAt } from "@/lib/game/piece-state.ts";
 import { Confetti } from "./confetti.tsx";
 import { Piece } from "./piece.tsx";
 import { PromotionPicker } from "./promotion-picker.tsx";
@@ -54,6 +54,38 @@ interface BoardProps {
  * rather than a board.
  */
 const BOARD_RADIUS = 14;
+
+/**
+ * Which edge of a marked square touches the other one, or nothing.
+ *
+ * Only two squares ever carry the last-move tint, and a one-step move puts them against
+ * each other, where two flat fills read as a single tall shape rather than as a move. The
+ * seam is drawn on that shared edge alone. An outline around every marked square would turn
+ * a tint into a border and change how the board reads on every move, including the moves
+ * that never had this problem.
+ *
+ * Worked out in screen space, after the board has been turned round. In board terms a move
+ * up the file is always up the file, and on a flipped board it is drawn downwards.
+ */
+function seamFor(
+  square: SquareIndex,
+  lastMove: { from: SquareIndex; to: SquareIndex } | null,
+  flipped: boolean,
+): "Top" | "Right" | "Bottom" | "Left" | undefined {
+  if (lastMove === null) return undefined;
+  const other =
+    square === lastMove.from ? lastMove.to : square === lastMove.to ? lastMove.from : null;
+  if (other === null) return undefined;
+
+  const dx = columnOf(other, flipped) - columnOf(square, flipped);
+  const dy = rowOf(other, flipped) - rowOf(square, flipped);
+  // Only the four sides. Two squares meeting at a corner share no edge to draw.
+  if (dx === 0 && dy === -1) return "Top";
+  if (dx === 0 && dy === 1) return "Bottom";
+  if (dx === -1 && dy === 0) return "Left";
+  if (dx === 1 && dy === 0) return "Right";
+  return undefined;
+}
 
 /** Chebyshev distance, so hints ripple outward in rings rather than by raw index. */
 function ringDistance(from: SquareIndex, to: SquareIndex): number {
@@ -205,6 +237,9 @@ export function Board({
       const state: SquareState = {
         selected: selected === square,
         lastMove: lastMove !== null && (lastMove.from === square || lastMove.to === square),
+        ...(seamFor(square, lastMove, flipped) === undefined
+          ? {}
+          : { seam: seamFor(square, lastMove, flipped) }),
         hint: target === undefined ? "none" : capturing ? "capture" : "move",
         hintIndex: selected === null ? 0 : ringDistance(selected, square),
         check: checkedKing === square,

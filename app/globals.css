@@ -31,6 +31,15 @@
    */
   --sq-select: #ede7d9;
   --sq-lastmove: #f7f4ec;
+  /*
+   * The hairline between two marked squares that touch.
+   *
+   * Only ever two squares carry the last-move tint, and when the move was one step they
+   * share an edge and read as a single tall shape rather than as a move. This is drawn on
+   * that edge alone: an outline around every marked square would turn a tint into a border
+   * and change how the board reads on every move.
+   */
+  --sq-lastmove-seam: #e8e1cd;
   --sq-hint: #c2c2c6;
   --sq-check: #f6c9c4;
   --focus-ring: #b6b0a4;
@@ -161,6 +170,8 @@
 
   --sq-select: #423a29;
   --sq-lastmove: #2f2b20;
+  /* Lighter than the tint, not darker. A seam that goes darker on a dark board is a gap. */
+  --sq-lastmove-seam: #453d2c;
   --sq-hint: #55555e;
   --sq-check: #5f2320;
   --focus-ring: #6b6355;
