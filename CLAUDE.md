@@ -179,7 +179,7 @@ Everything else stays as it was. Do not reach for it to fade, slide, or stagger 
 ## Architecture
 
 ```
-app/                    layout, page, globals.css
+app/                    layout, page, globals.css, robots.ts, sitemap.ts
   api/rooms/            the room API. Four lines each, calling lib/room/handlers.ts
 public/                 click.mp3, move.mp3, capture.mp3, the only binary assets
 components/
@@ -195,6 +195,7 @@ lib/
   game/                 reducer and piece identity. Pure, so node --test can reach it
   bot/                  pure search plus the worker entry. No React
   room/                 every rule a room has, plus the wire types both sides import
+  site.ts               the origin, name and description. One place, see below
   share/                the picture a finished game produces. No React
   pieces.ts             the six glyphs as path data, used by the board and the picture
   squircle.ts           continuous-corner path generator
@@ -256,6 +257,18 @@ Two things need saying out loud:
 - **A room key is data, not style.** It is read out loud and typed back from an alphabet
   that is uppercase by definition, so `[data-room-key]` is set to uppercase and the join
   input keeps its own `uppercase`. It is the one string here whose case carries meaning.
+
+## The origin lives in one place
+
+`lib/site.ts` holds the URL, and the metadata, the canonical link, `robots.txt` and the
+sitemap all read it. Three copies would be three chances to move host and forget one, and a
+sitemap advertising an address the canonical link disagrees with is worse than no sitemap,
+because a crawler then has to choose between them.
+
+**Deploy a change to it only once DNS resolves.** `og:image` is an absolute URL built from
+this, so shipping ahead of the record points every social crawler at a host that does not
+answer, and they cache that. A card that failed to fetch stays broken until the cache
+expires or is manually purged, which is far more annoying than waiting.
 
 ## Motion rule, and one documented exception
 

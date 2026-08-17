@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site.ts";
 
 const sans = Geist({ subsets: ["latin"], variable: "--font-geist-sans", display: "swap" });
 const mono = Geist_Mono({
@@ -11,22 +12,23 @@ const mono = Geist_Mono({
 // Carried by the material badge alone, where tabular figures have to line up.
 const numeric = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
-const SITE = "https://chess.sanyam.sh";
-const DESCRIPTION = "A very small chess game. Play the bot at three difficulties.";
+const SITE = SITE_URL;
+const DESCRIPTION = SITE_DESCRIPTION;
 
 export const metadata: Metadata = {
   // Without this, Next resolves relative Open Graph URLs against localhost and every
   // shared link points somewhere private.
   metadataBase: new URL(SITE),
-  title: "sixtyfour",
+  title: SITE_NAME,
   description: DESCRIPTION,
-  applicationName: "sixtyfour",
+  applicationName: SITE_NAME,
   authors: [{ name: "Sanyam Punia", url: "https://sanyam.sh" }],
   creator: "Sanyam Punia",
   keywords: ["chess", "chess game", "play chess", "chess bot", "minimal"],
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
+    locale: "en_US",
     url: SITE,
     siteName: "sixtyfour",
     title: "sixtyfour",
