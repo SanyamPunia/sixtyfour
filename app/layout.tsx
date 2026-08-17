@@ -11,7 +11,7 @@ const mono = Geist_Mono({
 // Carried by the material badge alone, where tabular figures have to line up.
 const numeric = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
-const SITE = "https://sixtyfour-liart.vercel.app";
+const SITE = "https://chess.sanyam.sh";
 const DESCRIPTION = "A very small chess game. Play the bot at three difficulties.";
 
 export const metadata: Metadata = {

@@ -3,7 +3,7 @@
 A very small chess game. One board, a handful of round controls, and a bot at three
 difficulties. Or a friend, over a shared link.
 
-[Play it](https://sixtyfour-liart.vercel.app)
+[Play it](https://chess.sanyam.sh)
 
 ![The sixtyfour board at the starting position, split down the middle between the light and dark themes.](app/opengraph-image.png)
 
