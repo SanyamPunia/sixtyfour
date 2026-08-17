@@ -62,17 +62,6 @@ export interface RoomControls {
   dismissProblem: () => void;
 }
 
-/**
- * A short account of what happened to a move, always on.
- *
- * Four lines at most per move, and only ever in a room. The bug worth watching for needs a
- * real network to happen at all, so the only place it can be seen is the browser it happens
- * in, and a flag nobody remembers to set is a flag that is never on when it matters.
- */
-function log(line: string): void {
-  console.log(`room: ${line}`);
-}
-
 const NOBODY: SeatMap<Presence> = { white: "gone", black: "gone" };
 
 const REFUSALS: Record<RejectReason, string> = {
@@ -164,7 +153,6 @@ export function useRoom(
 
     switch (message.type) {
       case "joined": {
-        log(`joined as ${message.seat}`);
         keyRef.current = message.room.key;
         seatRef.current = message.seat;
         tokenRef.current = message.token;
@@ -215,10 +203,7 @@ export function useRoom(
          * already hold carries no news and is dropped. The move's own answer, or the next
          * poll after it, is what moves the board on.
          */
-        if (sentRef.current !== null && message.room.version <= versionRef.current) {
-          log(`ignored a stale answer while ${sentRef.current} was unanswered`);
-          return;
-        }
+        if (sentRef.current !== null && message.room.version <= versionRef.current) return;
 
         const authoritative = [...message.room.moves];
         // Set before dispatching, not after. The send effect compares the board against
@@ -244,21 +229,15 @@ export function useRoom(
           const uci = authoritative[authoritative.length - 1] as string;
           const move = fromUci(stateRef.current.position, uci);
           if (move !== null) {
-            log(`their move ${uci}`);
             dispatchRef.current({ type: "play", move });
             return;
           }
-        }
-        // The line to look for. A rebuild shorter than the board is the snap back.
-        if (authoritative.length < local.length) {
-          log(`WENT BACKWARDS, ${local.length} moves became ${authoritative.length}`);
         }
         dispatchRef.current({ type: "syncRoom", moves: authoritative, resigned });
         return;
       }
 
       case "rejected": {
-        log(`refused: ${message.reason}`);
         if (message.room !== null) {
           confirmedRef.current = [...message.room.moves];
           versionRef.current = message.room.version;
@@ -321,7 +300,6 @@ export function useRoom(
          * make every later poll look stale and freeze the board on a dropped connection.
          * Clearing it also lets the same move be sent again, which is what should happen.
          */
-        log("request failed");
         sentRef.current = null;
         setStatus("reconnecting");
         return false;
@@ -428,7 +406,6 @@ export function useRoom(
 
     const uci = toUci(last);
     if (sentRef.current === uci) return;
-    log(`my move ${uci}`);
     sentRef.current = uci;
     void call(`/${roomKey}/move`, { token, uci, at: versionRef.current });
   }, [state.history, state.opponent, call]);
