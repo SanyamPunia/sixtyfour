@@ -171,6 +171,31 @@ test("entering a room takes the seat's colour and replays what has happened", ()
   });
 });
 
+test("the other player's pieces do not answer a tap", () => {
+  const room = gameReducer(createGame(), {
+    type: "enterRoom",
+    color: WHITE,
+    moves: ["e2e4"],
+    resigned: null,
+  });
+  assert.equal(room.position.side, BLACK, "it is their move");
+
+  const tapped = gameReducer(room, { type: "select", square: parseSquare("e7") });
+  assert.equal(tapped, room, "one of their pawns was picked up");
+
+  const grabbed = gameReducer(room, { type: "grab", square: parseSquare("e7") });
+  assert.equal(grabbed, room, "one of their pawns was dragged");
+
+  const ours = gameReducer(room, { type: "select", square: parseSquare("d2") });
+  assert.equal(ours, room, "one of ours was picked up out of turn");
+
+  // And the board comes back the moment the turn does, so nothing above froze it.
+  const back = gameReducer(room, { type: "syncRoom", moves: ["e2e4", "e7e5"], resigned: null });
+  const held = gameReducer(back, { type: "select", square: parseSquare("d2") });
+  assert.equal(held.selected, parseSquare("d2"));
+  assert.equal(held.legalTargets.length, 2, "the pawn can push one square or two");
+});
+
 test("a sync that agrees with the board changes nothing a player would see", () => {
   const room = gameReducer(createGame(), {
     type: "enterRoom",

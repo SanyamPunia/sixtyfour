@@ -190,9 +190,18 @@ function fromMoves(base: GameState, moves: readonly string[]): GameState {
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case "select": {
-      if (isOver(state) || state.thinking) return state;
-      // The picker owns the board until it is answered.
-      if (state.pendingPromotion !== null) return state;
+      /*
+       * A tap is ignored while it is not your move.
+       *
+       * `isHumanTurn` is the same question the board asks before it draws a cursor or
+       * starts a drag, so the two agree. Ownership below was read as "belongs to the side
+       * to move", which matches your own pieces on your move and your opponent's on theirs.
+       * Against the bot the thinking flag hid that. A room sets no thinking flag, so the
+       * other player's pieces picked up and showed their legal moves.
+       *
+       * This also covers the promotion picker, which owns the board until it is answered.
+       */
+      if (!isHumanTurn(state)) return state;
 
       const { position, selected } = state;
       const target = state.legalTargets.filter((m) => m.to === action.square);
@@ -215,12 +224,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       const piece = at(position.board, action.square);
-      const ownPiece = piece !== EMPTY && Math.sign(piece) === position.side;
+      const ownPiece = piece !== EMPTY && Math.sign(piece) === state.humanColor;
 
       if (!ownPiece) {
-        // With nothing held, tapping empty space is a no-op. With a piece held, the tap
-        // asked for a move that is not available, and the shake says so without any copy.
-        // The selection survives, because otherwise there is nothing left to shake.
+        // With nothing held, tapping empty space or one of theirs is a no-op. With a
+        // piece held, the tap asked for a move that is not available, and the shake says
+        // so without any copy. The selection survives, because otherwise there is nothing
+        // left to shake.
         return selected === null ? state : { ...state, shakeToken: state.shakeToken + 1 };
       }
 
@@ -251,11 +261,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case "grab": {
       // Selection without the toggle. `select` deselects when you tap the held piece
       // again, which during a drag would drop the piece you are still holding.
-      if (isOver(state) || state.thinking) return state;
-      if (state.pendingPromotion !== null) return state;
+      if (!isHumanTurn(state)) return state;
       if (state.selected === action.square) return state;
       const piece = at(state.position.board, action.square);
-      if (piece === EMPTY || Math.sign(piece) !== state.position.side) return state;
+      if (piece === EMPTY || Math.sign(piece) !== state.humanColor) return state;
       const targets = targetsFrom(state.position, action.square);
       if (targets.length === 0) return state;
       return { ...state, selected: action.square, legalTargets: targets };
