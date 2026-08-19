@@ -27,6 +27,11 @@ interface BoardProps {
   selected: SquareIndex | null;
   legalTargets: readonly Move[];
   lastMove: { from: SquareIndex; to: SquareIndex } | null;
+  /**
+   * A move being looked at in the move list, which stands in for the last move while the
+   * pointer is on it. Null puts the real one back.
+   */
+  preview: { from: SquareIndex; to: SquareIndex } | null;
   checkedKing: SquareIndex | null;
   matedKing: SquareIndex | null;
   castlingRookId: string | null;
@@ -99,6 +104,7 @@ export function Board({
   selected,
   legalTargets,
   lastMove,
+  preview,
   checkedKing,
   matedKing,
   castlingRookId,
@@ -204,6 +210,15 @@ export function Board({
     };
   }, [resetToken]);
 
+  /*
+   * The move the board is currently marking.
+   *
+   * A preview replaces the last-move tint rather than adding a second pair of marked
+   * squares. Four tinted squares cannot say which two belong together, so showing both at
+   * once would make the board less readable than showing either alone.
+   */
+  const marked = preview ?? lastMove;
+
   const targetBySquare = new Map<SquareIndex, Move>();
   for (const move of legalTargets) targetBySquare.set(move.to, move);
 
@@ -236,10 +251,10 @@ export function Board({
 
       const state: SquareState = {
         selected: selected === square,
-        lastMove: lastMove !== null && (lastMove.from === square || lastMove.to === square),
-        ...(seamFor(square, lastMove, flipped) === undefined
+        lastMove: marked !== null && (marked.from === square || marked.to === square),
+        ...(seamFor(square, marked, flipped) === undefined
           ? {}
-          : { seam: seamFor(square, lastMove, flipped) }),
+          : { seam: seamFor(square, marked, flipped) }),
         hint: target === undefined ? "none" : capturing ? "capture" : "move",
         hintIndex: selected === null ? 0 : ringDistance(selected, square),
         check: checkedKing === square,

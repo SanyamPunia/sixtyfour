@@ -648,6 +648,109 @@ textarea {
   }
 }
 
+/* ----------------------------------------------------------- move list -- */
+
+/*
+ * The list of moves, beside the board or under it.
+ *
+ * The newest move is written to the scroll offset by the component. Smooth is declared here
+ * rather than passed to `scrollTo`, because a behaviour set in JavaScript ignores the
+ * player's reduced-motion setting and a stylesheet rule does not.
+ *
+ * No scrollbar. The fades below say the same thing and say it in the page's own terms, and a
+ * bar that appears on every move is one more thing moving on a surface whose whole argument
+ * is that almost nothing moves. It is also the one piece of chrome here that no stylesheet
+ * fully owns: its width, its resting visibility and whether it takes layout space are the
+ * platform's to decide, so the same rule reads as an overlay on one machine and as a
+ * permanent grey rail on another.
+ */
+.move-scroller {
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  --fade: 1.25rem;
+  --fade-start: 0px;
+  --fade-end: 0px;
+  transition:
+    --fade-start var(--dur-quick) var(--ease-soft),
+    --fade-end var(--dur-quick) var(--ease-soft);
+}
+
+/*
+ * Registered, so the two lengths can be transitioned.
+ *
+ * A custom property is a string to the engine unless its type is declared, and a string
+ * cannot be interpolated. With these the gradient is regenerated every frame and the fade
+ * grows in rather than appearing whole the moment the first pixel is scrolled.
+ */
+@property --fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/*
+ * A fade on whichever edge still has list behind it.
+ *
+ * The component sets these two attributes from the scroll offset. Both off is a list that
+ * fits, and then both lengths are zero and the mask is a straight-through no-op.
+ *
+ * A mask rather than two gradient elements overlaid on the surface colour: it adds no nodes,
+ * and it fades the row hover along with the text instead of painting over it. `black` and
+ * `transparent` here are the alpha channel and not colour, which is why they are literals
+ * rather than tokens.
+ */
+.move-scroller[data-fade-start] {
+  --fade-start: var(--fade);
+}
+
+.move-scroller[data-fade-end] {
+  --fade-end: var(--fade);
+}
+
+.move-scroller[data-axis="column"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black var(--fade-start),
+    black calc(100% - var(--fade-end)),
+    transparent 100%
+  );
+}
+
+.move-scroller[data-axis="strip"] {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    black var(--fade-start),
+    black calc(100% - var(--fade-end)),
+    transparent 100%
+  );
+}
+
+/*
+ * One row arriving, not the whole list.
+ *
+ * Rows are keyed by the move they describe, so a row that already exists keeps its node and
+ * this runs on the new one alone. A room correction that rebuilds the history from the
+ * server's word therefore does not replay the list.
+ */
+.move-row {
+  animation: move-row-in var(--dur-settle) var(--ease-settle);
+}
+
+@keyframes move-row-in {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+}
+
 /*
  * Toggling icons.
  *
@@ -840,6 +943,7 @@ textarea {
   .icon-spin,
   .bar-equalise,
   .digit-roll,
+  .move-row,
   .turn-dot,
   .swap-icons > *,
   .confetti > i,
@@ -849,5 +953,10 @@ textarea {
   .dialog-overlay,
   .dialog-content {
     animation: none;
+  }
+
+  .move-scroller {
+    scroll-behavior: auto;
+    transition: none;
   }
 }

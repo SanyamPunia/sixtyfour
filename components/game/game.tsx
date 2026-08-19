@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip.tsx";
 import { isCapture, materialBalance } from "@/lib/chess/rules.ts";
 import { BLACK, type Color, WHITE } from "@/lib/chess/types.ts";
+import { moveLog } from "@/lib/game/move-log.ts";
 import {
   checkedKingSquare,
   createGame,
@@ -25,6 +26,7 @@ import {
 import { setMuted } from "@/lib/sound.ts";
 import { Board } from "./board.tsx";
 import { ControlBar } from "./control-bar.tsx";
+import { MoveList } from "./move-list.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { StatusRegion } from "./status-region.tsx";
 import { useBot } from "./use-bot.ts";
@@ -40,6 +42,25 @@ export function Game() {
   useBot(state, dispatch);
   const [room, roomControls] = useRoom(state, dispatch);
   const inRoom = state.opponent === "room";
+
+  const moves = useMemo(
+    () => moveLog(state.history, state.humanColor),
+    [state.history, state.humanColor],
+  );
+
+  /*
+   * Which move the list is pointing at, held as an index into `moves`.
+   *
+   * React state rather than a ref, unlike the board's own hover, because the mark is
+   * rendered output and has to re-render to change. The board avoids state there because
+   * pointer movement across 64 squares fires continuously. A row boundary is crossed once
+   * per row, which is a different order of frequency entirely.
+   *
+   * Resolved through the list rather than stored as two squares, so a room that rolls a move
+   * back leaves nothing marking a move that never happened.
+   */
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const previewed = previewIndex === null ? undefined : moves[previewIndex - 1];
 
   /*
    * Stored choices are applied on mount rather than read while building the initial state.
@@ -92,9 +113,10 @@ export function Game() {
         {/*
           The board is capped against the viewport height as well as its width, so the
           board and the control row always fit without the page scrolling. 18rem covers
-          the page padding plus the controls.
+          the page padding plus the controls, and the 3.5rem on top of it covers the move
+          strip, which is only in the flow below `lg`.
         */}
-        <div className="flex w-full max-w-[min(100%,calc(100dvh-18rem))] flex-col gap-6">
+        <div className="relative flex w-full max-w-[min(100%,calc(100dvh-21.5rem))] flex-col gap-6 lg:max-w-[min(508px,calc(100dvh-18rem))]">
           <StatusBar
             yourTurn={state.position.side === state.humanColor}
             whiteToMove={state.position.side === WHITE}
@@ -110,6 +132,9 @@ export function Game() {
             selected={state.selected}
             legalTargets={state.legalTargets}
             lastMove={state.lastMove}
+            preview={
+              previewed === undefined ? null : { from: previewed.from, to: previewed.to }
+            }
             checkedKing={checkedKingSquare(state)}
             matedKing={matedKingSquare(state)}
             castlingRookId={state.castlingRookId}
@@ -125,6 +150,14 @@ export function Game() {
             onGrab={(square) => dispatch({ type: "grab", square })}
             onSelect={(square) => dispatch({ type: "select", square })}
           />
+          {/*
+            The strip holds its 2rem whether or not there is anything in it.
+            Letting it appear with the first move would shift a centred board upward at the
+            exact moment a pawn is sliding to e4, which is the one frame it must not move in.
+          */}
+          <div className="h-8 lg:hidden">
+            <MoveList moves={moves} layout="strip" onPreview={setPreviewIndex} />
+          </div>
           <ControlBar
             difficulty={state.difficulty}
             thinking={state.thinking}
@@ -142,6 +175,22 @@ export function Game() {
             onDifficulty={changeDifficulty}
             onNewGame={() => dispatch({ type: "newGame" })}
           />
+          {/*
+            Hung off the right edge rather than placed in a row with the board, so the board
+            keeps the centre of the page and never moves. A panel in the flow would slide a
+            centred board left by half its width the first time a move was played.
+
+            `lg` is where it fits: a 508px board centred in 1024px leaves 258px to the right
+            of it, and this asks for 176 plus a 16px gap.
+
+            The inset is the board's own top and bottom edge, so the list is a column exactly
+            as tall as the board rather than as the whole block. Both numbers come from the
+            two rows it clears: the status bar is `h-5` and the controls are `size-10`, each
+            plus this column's `gap-6`.
+          */}
+          <div className="absolute top-11 bottom-16 left-full ml-4 hidden w-44 lg:block">
+            <MoveList moves={moves} layout="column" onPreview={setPreviewIndex} />
+          </div>
         </div>
       </main>
     </TooltipProvider>
