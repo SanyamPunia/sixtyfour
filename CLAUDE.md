@@ -12,8 +12,14 @@
 
 sixtyfour, a minimal chess game. One board, a row of round controls, and a bot at three
 difficulties, or a friend over a shared link. The whole product is a single screen. The
-design goal is a board that feels alive through quiet motion, and a page that shows no
-visible text except one number.
+design goal is a board that feels alive through quiet motion, and a page that says as little
+as it can get away with.
+
+The page used to show no visible text at all except the material number. The move list broke
+that, on purpose: a board with no clock and no notation gives a player nothing to work out
+what just left the board with, which is the one question the quiet version could not answer.
+It is still held to the same standard. One word per row, no headings, and nothing on screen
+before the first move.
 
 The control row is not a fixed set. Difficulty and side are dropped in a room, where they
 have nothing to set, and the camera exists only once a game has a result. Adding a control
@@ -185,6 +191,7 @@ public/                 click.mp3, move.mp3, capture.mp3, the only binary assets
 components/
   game/                 the one feature. Components, hooks, and motion constants
     pieces/             one SVG component per piece type
+    move-list.tsx       what has been played, beside the board or under it
   ui/                   shadcn primitives, plus text-morph.tsx
   smooth-corners.tsx    measures the board, then writes the squircle clip path
   site-credit.tsx       the byline, pinned bottom right
@@ -192,7 +199,8 @@ lib/
   sound.ts              every clip and its volume, in one place. No React
   preferences.ts        difficulty, side and mute, stored and read back. No React
   chess/                pure engine. No React
-  game/                 reducer and piece identity. Pure, so node --test can reach it
+  game/                 reducer, piece identity and the move log. Pure, so node --test
+                        can reach it
   bot/                  pure search plus the worker entry. No React
   room/                 every rule a room has, plus the wire types both sides import
   site.ts               the origin, name and description. One place, see below
@@ -217,6 +225,57 @@ mismatch is reported rather than guessed at.
 calls one handler, and returns the result. Everything that could be wrong lives in
 `handlers.ts`, so the whole API is covered by `node --test` with no server booted. If a rule
 ever needs adding it goes in `service.ts`, not in either of them.
+
+**The move log is derived, never recorded.** `lib/game/move-log.ts` turns `state.history`
+into the rows the list draws, and a `Move` already carries everything it needs: the piece as
+it stood, the piece standing on the destination, the promotion and the flags. So there is no
+second list to keep in step. That is what makes it correct in a room, where `fromMoves`
+rebuilds the history from the server's word on every correction. A log held beside `history`
+would be another thing to rebuild, and the one that fell behind would be the one a player was
+reading. En passant is the only case that needs the flag rather than the `captured` field: the
+pawn it takes was never standing on the destination square.
+
+Two things the rows do not spell out. A castle is named "castles" and a promotion "promotes",
+because "king g1" describes a castle without naming it and "pawn e8" hides the only
+interesting thing that happened. And whose move it was is carried by the glyph's fill, which
+is keyed to the chess colour, plus a `sr-only` sentence per row that says "you" or "opponent".
+The painted row stays three fragments wide.
+
+**The list is beside the board on `lg` and under it below that.** The wide one is
+`absolute left-full`, not a flex sibling, so the board keeps the centre of the page and never
+moves: a panel in the flow would slide a centred board left by half its width the first time a
+move was played. The narrow one is a sideways scroller that holds its 2rem whether or not
+there is anything in it, for the same reason in the other axis. Both are the same component.
+
+**It is capped to the board's height and scrolls. No scrollbar.** A scrollbar is the one
+piece of chrome here that no stylesheet fully owns: its width, its resting visibility and
+whether it takes layout space are the platform's to decide, so one rule reads as an overlay
+on one machine and a permanent grey rail on another. `scrollbar-width: none`, and a
+`mask-image` fades whichever edge still has list behind it instead. The component writes
+`data-fade-start` and `data-fade-end` from the scroll offset and the stylesheet does the rest.
+The fade is position-aware rather than constant because the list sits at its newest row, and a
+fade that is always on would permanently dim the move most worth reading.
+
+Three things in this file are load-bearing in ways that are not obvious, and each was a bug
+first.
+
+- **The list renders even when it is empty.** Returning null before the first move left the
+  ref null through the first render, and the effect that attaches the scroll listener and the
+  `ResizeObserver` has no dependency that changes when a row finally arrives. So it returned
+  early and never ran again: the fades stayed off for the whole game.
+- **`h-full` on the column is what makes it scroll.** `overflow-y: auto` on an auto-height
+  block has no height to scroll within, so it grew instead. It ran out of its own wrapper,
+  past the board and off the bottom of the page, and the scrollbar that then appeared on every
+  move was the document's.
+- **A row's `relative`.** `sr-only` is absolutely positioned, and without a containing block
+  on the row it resolves against the nearest positioned ancestor outside the scroller, escapes
+  the overflow clip, and lands at its static offset inside the scrolled content. Sideways on a
+  phone that is off the right of the viewport, and the page gets a horizontal scrollbar while
+  the list itself looks perfectly correct.
+
+All three share a shape worth remembering: the list looked right in every case, and only the
+page around it was wrong. `scripts/verify.mjs` measures the cap, the fades at both ends and
+document overflow because none of them can be seen by looking at the rows.
 
 **The piece paths live in `lib/pieces.ts`, not in the component that draws them.** The
 shared image redraws the board from the same data, and a second copy would drift. The drift

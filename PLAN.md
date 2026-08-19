@@ -1076,7 +1076,100 @@ progress is not throwing confetti.
 
 ---
 
-## 16. Next
+## 16. The move list
+
+Added after rooms. The problem it solves belongs to both opponents equally: a board with no
+clock and no notation gives a player nothing to work out what just left the board with, and
+against a person that is the whole question. The material badge says you are two pawns down
+and not which two, nor when.
+
+**It is derived, not recorded.** `lib/game/move-log.ts` is a pure function of
+`state.history`, because a `Move` already carries the piece as it stood, the piece standing on
+the destination, the promotion and the flags. Nothing was added to `GameState`. That is what
+makes it correct in a room: `fromMoves` rebuilds the history from the server's word on every
+correction, and a parallel log would be a second thing to rebuild.
+
+One case does not come out of the `captured` field. En passant takes a pawn that was never
+standing on the destination square, so the move reports no capture and only `FLAG_EN_PASSANT`
+says one happened.
+
+**The row is a glyph, a word and a square.** The glyph comes from `lib/pieces.ts`, the same
+path data the board and the shared picture draw, so a knight in the list is the knight on the
+board. A capture appends a lucide cross and the taken piece's glyph, whose fill says whose it
+was. Two rows are not named after their piece: a castle is "castles" and a promotion is
+"promotes", because "king g1" describes a castle without naming it and "pawn e8" hides the
+only interesting thing that happened.
+
+Whose move it was is not written down. The glyph fill is keyed to the chess colour, the same
+as on the board, and each row carries a `sr-only` sentence, so a screen reader hears "opponent
+moved pawn to d5, taking your pawn" while the painted row stays three fragments wide.
+
+**Numbering is by ply, not by full move.** One row per move by either side, counted 1, 2, 3.
+Chess numbers a pair, which in a single column either repeats every number or leaves a gap on
+every other row. The list is a record of what happened in order, not a score sheet.
+
+**Two shapes, one component.** Beside the board above `lg`, and a sideways scroller under it
+below that. The wide one is `absolute left-full` rather than a flex sibling, so the board keeps
+the centre of the page: a panel in the flow slides a centred board left by half its width the
+first time a move is played, and the frame it does that in is the frame a pawn is sliding to
+e4. The narrow one holds its 2rem whether or not it has anything in it, for the same reason in
+the other axis. The board's height cap grows by that 3.5rem below `lg` only, because the strip
+is `display: none` above it.
+
+**Pointing at a row marks that move on the board**, replacing the last-move tint rather than
+adding to it. Four tinted squares cannot say which two belong together. This is React state
+rather than the DOM writes the board's own hover uses, because the mark is rendered output and
+because a row boundary is crossed once per row rather than once per pixel. It is held as an
+index into the list, so a room that rolls a move back takes the mark with it.
+
+**No scrollbar. Fades instead.** A scrollbar is the one piece of chrome on this page that no
+stylesheet fully owns: its width, its resting visibility and whether it consumes layout space
+are all the platform's to decide, so a single rule reads as an overlay on one machine and as a
+permanent grey rail on another. `scrollbar-width: none`, and a `mask-image` fades whichever
+edge still has list behind it. The component writes `data-fade-start` and `data-fade-end` from
+the scroll offset, as attributes rather than state, because it changes on every frame of a
+scroll and the alternative is re-rendering every row to fade two edges of their container.
+
+The fade is position-aware, not constant. The list sits at its newest row, so a fade that is
+always at both ends would permanently dim the one move most worth reading. Both lengths are
+registered with `@property` so they interpolate: a custom property is a string to the engine
+until its type is declared, and a string cannot be transitioned, so without that the fade
+appears whole the instant the first pixel is scrolled.
+
+### Three bugs worth recording
+
+All three had the same shape. The list looked completely correct and the page around it was
+wrong, which is why `scripts/verify.mjs` now measures the cap, the fades at both ends and
+document overflow rather than reading rows.
+
+**The list grew instead of scrolling.** The wrapper is height-constrained by its insets, but
+the list inside it was an auto-height block, and `overflow-y: auto` on an auto-height block has
+no height to scroll within. So it ran out of its wrapper, past the board, off the bottom of the
+page, and the scrollbar that appeared on every move was the document's rather than the list's.
+`h-full` is the fix and the check is that the visible height equals the board's, because with
+two rows on screen a list that grows and a list that scrolls are indistinguishable.
+
+**The fades never came on.** The component returned null before the first move, so the ref was
+null through the first render, and the effect that attaches the scroll listener and the
+`ResizeObserver` has no dependency that changes when a row finally arrives. It returned early
+and never ran again. The list now renders while empty, which draws nothing.
+
+**`sr-only` is `position: absolute`.** A row without its own containing block resolves against
+the nearest positioned ancestor outside the scroller, escapes the overflow clip, and lands at
+its static offset inside the scrolled content. In the sideways strip that is off the right of a
+phone, and the page gets a horizontal scrollbar.
+
+### One thing that looked like a bug and was not
+
+The strip repeatedly measured a few pixels short of its own end, with the newest chip clipped
+and the trailing fade still on. `scrollWidth` was suspected and cleared: asking for far too
+much scroll with the animation off returns exactly `scrollWidth - clientWidth`, so the reported
+maximum is honest. It was the smooth scroll still in flight, because a bot reply lands
+asynchronously and restarts it. Anything asserting an end position has to wait for it.
+
+---
+
+## 17. Next
 
 `MULTIPLAYER.md` plans rooms. It is the first feature that needs a backend, the first that
 costs money to run, and the first that can fail in ways nothing here currently can.
