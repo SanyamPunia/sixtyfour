@@ -1148,6 +1148,130 @@ check(
   `${small.bottom} of ${small.viewport}`,
 );
 check("no horizontal scroll", small.overflowX === 0);
+
+/*
+ * The move strip, populated, and why this is checked on a phone rather than a wide screen.
+ *
+ * `sr-only` is absolutely positioned. A row without its own containing block resolves
+ * against the nearest positioned ancestor outside the scroller, escapes the overflow clip,
+ * and lands at its static offset inside the scrolled content. Sideways on a phone that is off
+ * the right of the viewport, and it gave the whole page a horizontal scrollbar while the list
+ * itself looked perfectly correct. Nothing about the rows says it is happening.
+ */
+const clickSquares = (from, to) =>
+  phone.evaluate(
+    async (a, b) => {
+      const settle = () => new Promise((r) => setTimeout(r, 80));
+      document.querySelector(`[data-sq="${a}"]`)?.click();
+      await settle();
+      document.querySelector(`[data-sq="${b}"]`)?.click();
+    },
+    from,
+    to,
+  );
+// e2 to e4, and the bot answers. Then g1 to f3, and it answers again.
+await clickSquares(20, 52);
+await phone.waitForFunction(
+  () =>
+    [...document.querySelectorAll('[aria-label="Moves played"]')].some(
+      (n) => n.getBoundingClientRect().width > 0 && n.querySelectorAll("li").length >= 2,
+    ),
+  { timeout: 15000 },
+);
+await clickSquares(6, 37);
+await phone.waitForFunction(
+  () =>
+    [...document.querySelectorAll('[aria-label="Moves played"]')].some(
+      (n) => n.getBoundingClientRect().width > 0 && n.querySelectorAll("li").length >= 4,
+    ),
+  { timeout: 15000 },
+);
+
+// `scroll-behavior: smooth` means the offset is still animating when the row lands, so this
+// is waited for rather than read once.
+const scrolledToEnd = await phone
+  .waitForFunction(
+    () => {
+      const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+        (n) => n.getBoundingClientRect().width > 0,
+      );
+      if (list === undefined) return false;
+      return (
+        list.scrollWidth > list.clientWidth &&
+        list.scrollLeft + list.clientWidth >= list.scrollWidth - 2
+      );
+    },
+    { timeout: 5000 },
+  )
+  .then(() => true)
+  .catch(() => false);
+
+const strip = await phone.evaluate(() => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+  return {
+    rows: list === undefined ? 0 : list.querySelectorAll("li").length,
+    direction: list === undefined ? "no list" : getComputedStyle(list).flexDirection,
+    overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    boardBottom: Math.round(board.bottom),
+    boardWidth: Math.round(board.width),
+    viewport: window.innerHeight,
+  };
+});
+check("the strip lists every move by either side", strip.rows >= 4, `${strip.rows} rows`);
+check("it runs sideways on a phone", strip.direction === "row", strip.direction);
+check("it is scrolled to the newest move", scrolledToEnd);
+check(
+  "a populated strip does not scroll the page sideways",
+  strip.overflowX === 0,
+  `${strip.overflowX}px of overflow`,
+);
+const stripFades = await phone.evaluate(async () => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const read = () => ({
+    start: list.hasAttribute("data-fade-start"),
+    end: list.hasAttribute("data-fade-end"),
+    flush: Math.round(
+      list.lastElementChild.getBoundingClientRect().right - list.getBoundingClientRect().right,
+    ),
+  });
+  const atEnd = read();
+  list.scrollLeft = 0;
+  // Smooth, so the offset is still moving for a moment after it is set.
+  await new Promise((r) => setTimeout(r, 800));
+  const atStart = read();
+  return { atEnd, atStart, scrollbar: getComputedStyle(list).scrollbarWidth };
+});
+check(
+  "the strip carries no scrollbar either",
+  stripFades.scrollbar === "none",
+  stripFades.scrollbar,
+);
+check(
+  // Within the same slack the component treats as the end. Both numbers come off a content
+  // box that is not an integer, so neither lands on exactly zero every time.
+  "the newest chip sits flush against the trailing edge",
+  stripFades.atEnd.flush <= 2,
+  `${stripFades.atEnd.flush}px past it`,
+);
+check(
+  "the strip fades whichever edge still has list behind it",
+  stripFades.atEnd.start &&
+    !stripFades.atEnd.end &&
+    !stripFades.atStart.start &&
+    stripFades.atStart.end,
+  `at the end: start ${stripFades.atEnd.start} end ${stripFades.atEnd.end}, at the start: start ${stripFades.atStart.start} end ${stripFades.atStart.end}`,
+);
+check(
+  "the board keeps its size and stays on screen with the strip in the flow",
+  strip.boardWidth === small.width && strip.boardBottom <= strip.viewport,
+  `${strip.boardWidth}px wide, bottom ${strip.boardBottom} of ${strip.viewport}`,
+);
+
 const phoneCredit = await phone.evaluate(() => {
   const footer = document.querySelector("footer");
   const box = footer.getBoundingClientRect();
@@ -1168,6 +1292,278 @@ check(
 );
 if (wantShots) await phone.screenshot({ path: `${OUT}/board-phone.png` });
 await phone.close();
+
+/*
+ * Wide enough for the move list to sit beside the board, which no other check here is.
+ *
+ * Every other viewport in this file is 560px, so the panel is `display: none` in all of them
+ * and its geometry was never looked at. It is hung off the right edge with `left-full` rather
+ * than placed in a row, so the two things that can go wrong are that it runs off the screen
+ * and that it lands on top of something.
+ */
+console.log("\n[1280x900 side panel]");
+const wide = await browser.newPage();
+await wide.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+await wide.goto(base, { waitUntil: "domcontentloaded" });
+await wide.waitForFunction(() => document.querySelector('[data-state="ready"]') !== null, {
+  timeout: 8000,
+});
+
+await wide.evaluate(async () => {
+  const settle = () => new Promise((r) => setTimeout(r, 80));
+  document.querySelector('[data-sq="20"]')?.click();
+  await settle();
+  document.querySelector('[data-sq="52"]')?.click();
+});
+await wide.waitForFunction(
+  () =>
+    [...document.querySelectorAll('[aria-label="Moves played"]')].some(
+      (n) => n.getBoundingClientRect().width > 0 && n.querySelectorAll("li").length >= 2,
+    ),
+  { timeout: 15000 },
+);
+
+const panel = await wide.evaluate(() => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const box = list.getBoundingClientRect();
+  const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+  const credit = document.querySelector("footer").getBoundingClientRect();
+  const hits = (a, b) =>
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const first = list.querySelector("li");
+  return {
+    direction: getComputedStyle(list).flexDirection,
+    rows: list.querySelectorAll("li").length,
+    // The piece glyphs alone. Every glyph is drawn on the 32 by 32 box `PIECE_VIEWBOX`
+    // declares and the lucide cross that marks a capture is 24 by 24, so counting every svg
+    // in the row would count that icon as a piece.
+    glyphs: first.querySelectorAll('svg[viewBox="0 0 32 32"]').length,
+    spoken: first.querySelector(".sr-only")?.textContent ?? "",
+    rightOfBoard: Math.round(box.left - board.right),
+    insideViewport: box.right <= window.innerWidth,
+    overlapsBoard: hits(box, board),
+    overlapsCredit: hits(box, credit),
+    // Aligned with the board itself rather than with the whole column.
+    topOffset: Math.round(box.top - board.top),
+    overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  };
+});
+check("the list sits beside the board", panel.direction === "column" && panel.rows >= 2);
+check(
+  "it clears the board and stays on screen",
+  panel.rightOfBoard >= 12 && panel.insideViewport && !panel.overlapsBoard,
+  `${panel.rightOfBoard}px clear, right edge inside: ${panel.insideViewport}`,
+);
+check("it does not land on the credit", !panel.overlapsCredit);
+check(
+  "it lines up with the top of the board",
+  Math.abs(panel.topOffset) <= 1,
+  `${panel.topOffset}px off`,
+);
+check("no sideways scroll at this width", panel.overflowX === 0, `${panel.overflowX}px`);
+check(
+  "a row names the piece and where it went, as one sentence",
+  panel.spoken === "you moved pawn to e4",
+  panel.spoken,
+);
+check("a quiet move draws one glyph", panel.glyphs === 1, `${panel.glyphs}`);
+
+/*
+ * Hover, driven with the real mouse rather than a dispatched event.
+ *
+ * React synthesises enter and leave from `pointerover` and `pointerout` at the root, so a
+ * hand-made `pointerenter` on the row does not reach the handler at all and the check would
+ * pass against nothing.
+ */
+const markedSquares = () =>
+  wide.evaluate(() =>
+    [...document.querySelectorAll(".sq")]
+      .filter((n) =>
+        [...n.children].some((c) => (c.getAttribute("style") ?? "").includes("--sq-lastmove)")),
+      )
+      .map((n) => (n.getAttribute("aria-label") ?? "").split(",")[0])
+      .sort(),
+  );
+
+const atRest = await markedSquares();
+const firstRow = await wide.evaluate(() => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const box = list.querySelector("li").getBoundingClientRect();
+  return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
+});
+await wide.mouse.move(firstRow.x, firstRow.y);
+await new Promise((r) => setTimeout(r, 250));
+const hovered = await markedSquares();
+await wide.mouse.move(4, 4);
+await new Promise((r) => setTimeout(r, 250));
+const released = await markedSquares();
+
+check(
+  "pointing at a move marks it on the board",
+  hovered.join(" ") === "e2 e4",
+  hovered.join(" ") || "nothing marked",
+);
+check(
+  "the board shows one move at a time, not both",
+  hovered.length === 2,
+  `${hovered.length} squares marked`,
+);
+check(
+  "leaving the list puts the real last move back",
+  released.join(" ") === atRest.join(" ") && released.join(" ") !== "e2 e4",
+  `${atRest.join(" ")} then ${released.join(" ")}`,
+);
+
+/*
+ * A few more moves, so there is enough list to overflow a short window below. Any legal move
+ * each turn rather than a scripted line, because a scripted reply can be made illegal by
+ * whatever the bot does in between.
+ */
+for (let turn = 0; turn < 4; turn++) {
+  await wide.evaluate(async () => {
+    const settle = () => new Promise((r) => setTimeout(r, 60));
+    const own = [...document.querySelectorAll(".sq")].filter((n) =>
+      (n.getAttribute("aria-label") ?? "").includes("your "),
+    );
+    for (const square of own) {
+      square.click();
+      await settle();
+      const target = document.querySelector(".hint-dot, .hint-ring")?.closest(".sq");
+      if (target) {
+        target.click();
+        return;
+      }
+      square.click();
+      await settle();
+    }
+  });
+  await new Promise((r) => setTimeout(r, 1400));
+}
+const enoughRows = await wide.evaluate(
+  () =>
+    [...document.querySelectorAll('[aria-label="Moves played"]')]
+      .find((n) => n.getBoundingClientRect().width > 0)
+      ?.querySelectorAll("li").length ?? 0,
+);
+check("a game long enough to test the cap", enoughRows >= 6, `${enoughRows} rows`);
+
+/*
+ * The height cap, and the fades that stand in for a scrollbar.
+ *
+ * This is where the list was wrong and nothing caught it: the wrapper is height-constrained
+ * but the list inside it was an auto-height block, and `overflow-y: auto` on an auto-height
+ * block has no height to scroll within. So it grew instead. It ran out of its own wrapper,
+ * past the board, off the bottom of the page, and the scrollbar that appeared on every move
+ * was the document's rather than the list's. The check that missed it played two moves, where
+ * a list that grows and a list that scrolls look exactly alike.
+ *
+ * So the invariant is asserted directly: the visible height is the board's, not the content's.
+ */
+const capped = await wide.evaluate(() => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+  return {
+    clientH: list.clientHeight,
+    scrollH: list.scrollHeight,
+    boardH: Math.round(board.height),
+    scrollbar: getComputedStyle(list).scrollbarWidth,
+    // Nothing above and nothing below, so neither edge is faded.
+    fadeStart: list.hasAttribute("data-fade-start"),
+    fadeEnd: list.hasAttribute("data-fade-end"),
+  };
+});
+check(
+  "the list is capped to the board's height rather than growing with the game",
+  capped.clientH === capped.boardH,
+  `${capped.clientH} visible, board ${capped.boardH}`,
+);
+check("it carries no scrollbar", capped.scrollbar === "none", capped.scrollbar);
+check(
+  "a list that fits fades neither edge",
+  !capped.fadeStart && !capped.fadeEnd && capped.scrollH <= capped.clientH,
+  `start ${capped.fadeStart}, end ${capped.fadeEnd}, ${capped.scrollH} of ${capped.clientH}`,
+);
+
+/*
+ * Forced to overflow by shrinking the window rather than by playing twenty moves, so the
+ * check is deterministic and does not depend on how long a random game against the bot runs.
+ * The board is capped against viewport height, and the list is capped to the board.
+ */
+await wide.setViewport({ width: 1280, height: 420, deviceScaleFactor: 1 });
+await new Promise((r) => setTimeout(r, 600));
+const overflowing = await wide.evaluate(() => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  const board = document.querySelector('[aria-label="Chess board"]').getBoundingClientRect();
+  return {
+    clientH: list.clientHeight,
+    scrollH: list.scrollHeight,
+    boardH: Math.round(board.height),
+    listBottom: Math.round(list.getBoundingClientRect().bottom),
+    boardBottom: Math.round(board.bottom),
+    atEnd: Math.round(list.scrollTop + list.clientHeight) >= list.scrollHeight - 2,
+    fadeStart: list.hasAttribute("data-fade-start"),
+    fadeEnd: list.hasAttribute("data-fade-end"),
+    pageOverflowY:
+      document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  };
+});
+check(
+  "a list too long for the board scrolls instead of growing",
+  overflowing.scrollH > overflowing.clientH && overflowing.clientH === overflowing.boardH,
+  `${overflowing.scrollH} of ${overflowing.clientH} visible, board ${overflowing.boardH}`,
+);
+check(
+  "it does not run past the bottom of the board",
+  overflowing.listBottom <= overflowing.boardBottom + 1,
+  `list ${overflowing.listBottom}, board ${overflowing.boardBottom}`,
+);
+check(
+  "and does not give the page a scrollbar",
+  overflowing.pageOverflowY === 0,
+  `${overflowing.pageOverflowY}px`,
+);
+check(
+  "a shrinking window keeps the newest move in view",
+  overflowing.atEnd,
+  overflowing.atEnd ? "" : "the newest move went off the bottom",
+);
+check(
+  "sitting on the newest move fades the top edge and not the bottom",
+  overflowing.fadeStart && !overflowing.fadeEnd,
+  `start ${overflowing.fadeStart}, end ${overflowing.fadeEnd}`,
+);
+
+// Scrolled back to the oldest move, where the fade has to be at the other end.
+const scrolledBack = await wide.evaluate(async () => {
+  const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+    (n) => n.getBoundingClientRect().width > 0,
+  );
+  list.scrollTop = 0;
+  // Smooth, so the offset is still moving for a moment after it is set.
+  await new Promise((r) => setTimeout(r, 700));
+  return {
+    fadeStart: list.hasAttribute("data-fade-start"),
+    fadeEnd: list.hasAttribute("data-fade-end"),
+    scrollTop: Math.round(list.scrollTop),
+  };
+});
+check(
+  "scrolling back to the first move moves the fade to the bottom edge",
+  !scrolledBack.fadeStart && scrolledBack.fadeEnd,
+  `start ${scrolledBack.fadeStart}, end ${scrolledBack.fadeEnd}, at ${scrolledBack.scrollTop}`,
+);
+await wide.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+
+if (wantShots) await wide.screenshot({ path: `${OUT}/board-panel.png` });
+await wide.close();
 
 /*
  * Two browsers, one room.
@@ -1927,6 +2323,78 @@ if (!hasRedis) {
         check("the board resets for the player who asked", await cleared(winner.page));
         const other = winner === host ? guest : host;
         check("and for the one who did not", await cleared(other.page));
+
+        /*
+         * What each seat is told about a capture, which is the thing the list exists for.
+         *
+         * A board with no clock and no notation gives a player nothing to work out what just
+         * left the board with. The two seats are reading the same three moves and must
+         * describe the third one in opposite terms: the one who took it took theirs, and the
+         * one who lost it lost yours. Getting that backwards is worse than saying nothing.
+         *
+         * 1. e4 d5 2. exd5, on the fresh board the rematch just handed back. 0x88 indices.
+         */
+        const capture = [
+          [white, 20, 52],
+          [black, 99, 67],
+          [white, 52, 67],
+        ];
+        let capturePlayed = 0;
+        for (const [who, from, to] of capture) {
+          if (await play(who.page, from, to)) capturePlayed += 1;
+        }
+        check("a capture can be played out", capturePlayed === 3, `${capturePlayed} of 3`);
+
+        const listOn = async (page) => {
+          await page.bringToFront();
+          await page
+            .waitForFunction(
+              () =>
+                [...document.querySelectorAll('[aria-label="Moves played"]')].some(
+                  (n) =>
+                    n.getBoundingClientRect().width > 0 &&
+                    n.querySelectorAll("li").length === 3,
+                ),
+              { timeout: 15000 },
+            )
+            .catch(() => {});
+          return await page.evaluate(() => {
+            const list = [...document.querySelectorAll('[aria-label="Moves played"]')].find(
+              (n) => n.getBoundingClientRect().width > 0,
+            );
+            if (list === undefined) return null;
+            return [...list.querySelectorAll("li")].map((row) => ({
+              spoken: row.querySelector(".sr-only")?.textContent ?? "",
+              // Piece glyphs only. See the note on the panel check above.
+              glyphs: row.querySelectorAll('svg[viewBox="0 0 32 32"]').length,
+            }));
+          });
+        };
+
+        const asWhite = await listOn(white.page);
+        const asBlack = await listOn(black.page);
+
+        check(
+          "the player who took a piece is told they took theirs",
+          asWhite?.[2]?.spoken === "you moved pawn to d5, taking their pawn",
+          asWhite?.[2]?.spoken ?? "no third row",
+        );
+        check(
+          "the player who lost one is told it was theirs",
+          asBlack?.[2]?.spoken === "opponent moved pawn to d5, taking your pawn",
+          asBlack?.[2]?.spoken ?? "no third row",
+        );
+        check(
+          "a capture draws the piece it took as well as the piece that took it",
+          asWhite?.[2]?.glyphs === 2 && asWhite?.[0]?.glyphs === 1,
+          `${asWhite?.[2]?.glyphs} glyphs on the capture, ${asWhite?.[0]?.glyphs} on the quiet move`,
+        );
+        check(
+          "both seats agree on who moved first",
+          asWhite?.[0]?.spoken === "you moved pawn to e4" &&
+            asBlack?.[0]?.spoken === "opponent moved pawn to e4",
+          `${asWhite?.[0]?.spoken} / ${asBlack?.[0]?.spoken}`,
+        );
       }
 
       await host.page.bringToFront();
