@@ -8,7 +8,7 @@
 import { algebraic, at, fileOf, parseSquare, rankOf, typeOf } from "./board.ts";
 import { makeMove, unmakeMove } from "./make.ts";
 import { isInCheck, legalMoves } from "./rules.ts";
-import type { Move, Position, PromotionType } from "./types.ts";
+import type { Move, PieceType, Position, PromotionType } from "./types.ts";
 import {
   BISHOP,
   EMPTY,
@@ -79,13 +79,23 @@ function suffix(pos: Position, move: Move): string {
 
 const SPOKEN_TYPE = ["", "pawn", "knight", "bishop", "rook", "queen", "king"];
 
+/**
+ * A piece's name in words.
+ *
+ * Kept here with the rest of the notation because the move log names pieces too, and two
+ * lists of six words would eventually disagree about one of them.
+ */
+export function pieceName(type: PieceType): string {
+  return SPOKEN_TYPE[type] as string;
+}
+
 /** A square label for assistive technology, for example "d4, opponent knight". */
 export function describeSquare(pos: Position, square: number, humanColor: number): string {
   const piece = at(pos.board, square);
   const name = algebraic(square);
   if (piece === EMPTY) return `${name}, empty`;
   const owner = Math.sign(piece) === humanColor ? "your" : "opponent";
-  return `${name}, ${owner} ${SPOKEN_TYPE[typeOf(piece)]}`;
+  return `${name}, ${owner} ${pieceName(typeOf(piece))}`;
 }
 
 const PROMO_LETTER: Record<number, string> = {
